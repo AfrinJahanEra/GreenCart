@@ -29,6 +29,9 @@ class User(AbstractBaseUser, PermissionsMixin):
         ('deliveryman', 'Deliveryman'),
     ]
 
+    class Meta:
+        db_table = 'user'
+
     username = models.CharField(max_length=50, unique=True)
     email = models.EmailField(unique=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES)
@@ -42,3 +45,23 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.username
+
+from django.utils import timezone
+
+class SignupLog(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    signup_time = models.DateTimeField(default=timezone.now)
+    username = models.CharField(max_length=50)
+    email = models.EmailField()
+
+    class Meta:
+        db_table = 'signup_log'
+
+class LoginLog(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    login_time = models.DateTimeField(default=timezone.now)
+    username = models.CharField(max_length=50)
+    email = models.EmailField()
+
+    class Meta:
+        db_table = 'login_log'
