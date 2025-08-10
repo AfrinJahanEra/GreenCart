@@ -3,10 +3,6 @@
 import os
 import sys
 
-# python manage.py makemigrations
-# python manage.py migrate
-
-
 
 def main():
     """Run administrative tasks."""

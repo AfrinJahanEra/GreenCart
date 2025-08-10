@@ -1,32 +1,27 @@
+
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-AUTH_USER_MODEL = 'user.User'
 
-SECRET_KEY = 'django-insecure-)%10o^)!z5&rvfttcoo(^$=3b)*bz-solg6$ao8c!9n%ivtkuy'
+SECRET_KEY = 'django-insecure-umqul&^y*79mw1@c(j8u8hh0u$1l+!s(3cu*l&9*jlcmd(hxvc'
+
 
 DEBUG = True
 
 ALLOWED_HOSTS = []
 
-REST_FRAMEWORK = {
-    'DEFAULT_RENDERER_CLASSES': [
-        'rest_framework.renderers.JSONRenderer',
-    ]
-}
+
 
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
-    'rest_framework',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'user',
 ]
-
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -61,9 +56,11 @@ WSGI_APPLICATION = 'Server.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.oracle',
-        'NAME': 'localhost:1521/ORCL2',
-        'USER': 'C##ridika',          
-        'PASSWORD': 'ridika123',
+        'NAME': 'orcl2',           # Example: 'XE' for Oracle Express
+        'USER': 'C##dbms',
+        'PASSWORD': 'dbms',
+        'HOST': 'localhost',
+        'PORT': '1521',
     }
 }
 
@@ -84,6 +81,8 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
+# Internationalization
+# https://docs.djangoproject.com/en/5.2/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
 
@@ -94,6 +93,12 @@ USE_I18N = True
 USE_TZ = True
 
 
+# Static files (CSS, JavaScript, Images)
+# https://docs.djangoproject.com/en/5.2/howto/static-files/
+
 STATIC_URL = 'static/'
+
+# Default primary key field type
+# https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

@@ -1,80 +1,99 @@
-from rest_framework.response import Response
-from rest_framework import status, generics
+from django.shortcuts import render, redirect, get_object_or_404
+from django.http import JsonResponse, HttpResponseForbidden
+from django.views.decorators.csrf import csrf_exempt
+from .models import User
+from django.utils.timezone import now
+from django.utils import timezone
+import hashlib
 from .models import *
-from .serializers import *
-from django.db import connection
-from rest_framework.views import APIView
-from django.contrib.auth import login
-from django.contrib.auth import get_user_model, authenticate
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
 
-User = get_user_model()
+# Simple password hash helper (you can improve with django's auth later)
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def list_active_users(request):
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute('SELECT * FROM view_active_users')
-            columns = [col[0].lower() for col in cursor.description]
-            rows = cursor.fetchall()
-            users = [dict(zip(columns, row)) for row in rows]
+import json
 
-        return Response({"users": users}, status=status.HTTP_200_OK)
-    except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
-def delete_user(request, user_id):
-    requester = request.user
-
-    if requester.role == "admin" and requester.id != user_id:
+@csrf_exempt
+def signup(request):
+    if request.method == 'POST':
         try:
-            with connection.cursor() as cursor:
-                cursor.callproc('delete_user_by_admin', [user_id])
-                connection.commit()
-            return Response({"message": "User soft-deleted by admin via procedure"}, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"error": f"Database error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
-    elif requester.id == user_id:
-        try:
-            target_user = User.objects.get(id=user_id)
-            target_user.is_deleted = True
-            target_user.save()
-            return Response({"message": "Your account has been soft-deleted"}, status=status.HTTP_200_OK)
-        except User.DoesNotExist:
-            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+        username = data.get('username')
+        email = data.get('email')
+        password = data.get('password')
+        role = data.get('role', 'buyer').lower()
 
+        if not password:
+            return JsonResponse({'error': 'Password is required'}, status=400)
+
+        if role not in ['admin', 'seller', 'deliveryman', 'buyer']:
+            return JsonResponse({'error': 'Invalid role'}, status=400)
+
+        if User.objects.filter(username=username).exists():
+            return JsonResponse({'error': 'Username already exists'}, status=400)
+        if User.objects.filter(email=email).exists():
+            return JsonResponse({'error': 'Email already exists'}, status=400)
+
+        hashed_password = hash_password(password)
+
+        user = User(username=username, email=email, password=hashed_password, role=role)
+        user.save()
+
+        return JsonResponse({'message': 'Signup successful', 'user_id': user.user_id})
     else:
-        return Response({"error": "You do not have permission to delete this user"}, status=status.HTTP_403_FORBIDDEN)
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
 
 
-class LoginView(APIView):
-    def post(self, request):
-        serializer = UserLoginSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        user = serializer.validated_data["user"]
-        login(request, user)
 
-        LoginLog.objects.create(user=user, login_time=timezone.now(), username=user.username, email=user.email)
-        
-        return Response({  # ← JSON response
-            "message": "Login successful",
-            "username": user.username,
-            "role": user.role,
-            "id": user.id  # ← Include user ID for deletion
-        })
+@csrf_exempt
+def login(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
-class SignupView(generics.CreateAPIView):
-    queryset = User.objects.all()
-    serializer_class = UserSignupSerializer
+        username = data.get('username')
+        password = data.get('password')
 
-    def perform_create(self, serializer):
-        user = serializer.save()
-        SignupLog.objects.create(user=user, signup_time=timezone.now(), username=user.username, email=user.email)
+        if not username or not password:
+            return JsonResponse({'error': 'Username and password required'}, status=400)
+
+        hashed_password = hash_password(password)
+        try:
+            user = User.objects.get(username=username, password=hashed_password)
+
+            return JsonResponse({'message': 'Login successful', 'user_id': user.user_id, 'role': user.role})
+        except User.DoesNotExist:
+            return JsonResponse({'error': 'Invalid username or password'}, status=401)
+    else:
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+
+
+def view_all_users(request):
+    users = User.objects.all().values('user_id', 'username', 'email', 'role')
+    return JsonResponse(list(users), safe=False)
+
+
+def view_users_by_role(request, role):
+    role = role.lower()
+    if role not in ['admin', 'seller', 'deliveryman', 'buyer']:
+        return JsonResponse({'error': 'Invalid role'}, status=400)
+    users = User.objects.filter(role=role).values('user_id', 'username', 'email')
+    return JsonResponse(list(users), safe=False)
+
+
+@csrf_exempt
+def delete_user(request, user_id):
+    if request.method == 'DELETE':
+        try:
+            user = User.objects.get(user_id=user_id)
+            user.delete()
+            return JsonResponse({'message': f'User {user_id} deleted'})
+        except User.DoesNotExist:
+            return JsonResponse({'error': 'User not found'}, status=404)
+    else:
+        return JsonResponse({'error': 'Only DELETE allowed'}, status=405)
