@@ -262,6 +262,30 @@ drop table "USER";
 -- user favourite will have add to cart option
 
 
+-- features for user
+  -- signup/ sign in
+  -- edit profile - username/ profile avatar
+  -- view all plants/ descriptions
+  -- add plants to cart
+  -- add plants to favourite
+  -- make order
+  -- confirm or cancel delivery
+-- features for seller
+  -- signup/sign in
+  -- edit profile - username/profile avatar
+  -- add plants
+  -- view all plants/ descriptions
+-- features for delivery man
+  -- view pending ordered deliveries
+  -- confirm delivery
+-- features for admin
+  -- assign/ unassign delivery man to a pending order
+  -- view all pending/confirmed/canceled orders
+  -- add seasonal discount
+  -- view all buyers/ delivery mans/ sellers/ admins
+  -- view all plant details
+
+
 
 
 
