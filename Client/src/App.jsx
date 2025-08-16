@@ -1,5 +1,6 @@
 // src/App.jsx
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import Home from './pages/Home';
 import PlantCollection from './pages/PlantCollection';
 import PlantDetails from './pages/PlantDetails';
@@ -25,6 +26,10 @@ import Delivery from './pages/admin/Delivery';
 import AdSales from './pages/admin/Sales';
 import Orders from './pages/admin/Orders';
 import Reports from './pages/admin/Reports';
+import OrderDashboard from './pages/orderdashboard/OrderDashboard';
+import AllOrders from './pages/orderdashboard/AllOrders';
+import PendingOrders from './pages/orderdashboard/PendingOrders';
+import DeliveredOrders from './pages/orderdashboard/DeliveredOrders';
 
 
 
@@ -63,6 +68,12 @@ function App() {
             <Route path="sales" element={<AdSales />} />
             <Route path="orders" element={<Orders />} />
             <Route path="reports" element={<Reports />} />
+          </Route>
+          <Route path="/orders" element={<OrderDashboard />}>
+            <Route index element={<Navigate to="all" replace />} />
+            <Route path="all" element={<AllOrders />} />
+            <Route path="pending" element={<PendingOrders />} />
+            <Route path="delivered" element={<DeliveredOrders />} />
           </Route>
         </Routes>
       </div>

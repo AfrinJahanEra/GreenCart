@@ -10,8 +10,22 @@ const Header = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
+  const [showOrders, setShowOrders] = useState(false);
   const searchRef = useRef(null);
   const navigate = useNavigate();
+
+  // In your Header component or a parent component
+  const [orders, setOrders] = useState([
+    // Sample orders data
+    {
+      id: 'GC-1001',
+      status: 'Delivered'
+    },
+    {
+      id: 'GC-1002',
+      status: 'Shipped'
+    }
+  ]);
 
   const allPlants = [
     { id: 1, name: 'Snake Plant', slug: 'snake-plant', image: 'https://images.unsplash.com/photo-1586220742613-b731f66f7743?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80' },
@@ -29,11 +43,11 @@ const Header = () => {
     }
 
     const results = allPlants
-      .filter(plant => 
+      .filter(plant =>
         plant.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
       .slice(0, 5);
-    
+
     setSearchResults(results);
   }, [searchQuery]);
 
@@ -74,13 +88,13 @@ const Header = () => {
             <Link to="/" className="text-xl sm:text-2xl font-bold" style={{ color: theme.colors.primary }}>
               GreenCart
             </Link>
-            
+
             <div className="w-full md:max-w-xl mx-0 md:mx-4 relative" ref={searchRef}>
               <form onSubmit={handleSearchSubmit}>
                 <div className="relative">
-                  <input 
-                    type="text" 
-                    placeholder="Search plants..." 
+                  <input
+                    type="text"
+                    placeholder="Search plants..."
                     className="w-full px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm sm:text-base"
                     value={searchQuery}
                     onChange={(e) => {
@@ -89,7 +103,7 @@ const Header = () => {
                     }}
                     onFocus={() => setShowResults(true)}
                   />
-                  <button 
+                  <button
                     type="submit"
                     className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
                   >
@@ -118,18 +132,18 @@ const Header = () => {
                 )}
               </form>
             </div>
-            
+
             <div className="flex items-center gap-2 sm:gap-4">
-              <button 
-                onClick={() => setShowProfile(true)} 
+              <button
+                onClick={() => setShowProfile(true)}
                 className="p-1 sm:p-2 rounded-full hover:bg-gray-100 transition-colors"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
               </button>
-              <button 
-                onClick={() => setShowCart(true)} 
+              <button
+                onClick={() => setShowCart(true)}
                 className="p-1 sm:p-2 rounded-full hover:bg-gray-100 transition-colors relative"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -137,6 +151,17 @@ const Header = () => {
                 </svg>
                 <span className="absolute -top-1 -right-1 bg-green-600 text-white text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center">
                   {allPlants.length}
+                </span>
+              </button>
+              <button
+                onClick={() => navigate('/orders')}
+                className="p-1 sm:p-2 rounded-full hover:bg-gray-100 transition-colors relative"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                <span className="absolute -top-1 -right-1 bg-green-600 text-white text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center">
+                  {orders.length} {/* You'll need to get this from your state */}
                 </span>
               </button>
             </div>

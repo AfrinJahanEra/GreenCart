@@ -4,6 +4,7 @@ export const theme = {
     primary: '#224229', // Dark green
     secondary: '#fbf7ed', // Cream
     accent: '#4b6250', // Lighter green
+    sidebarBg: 'rgba(255, 255, 255, 0.8)', 
     text: {
       primary: '#224229',
       secondary: '#5a6d5f',

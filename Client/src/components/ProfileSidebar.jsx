@@ -4,6 +4,7 @@ import Button from './Button';
 import { theme } from '../theme';
 
 const ProfileSidebar = ({ showProfile, setShowProfile }) => {
+  const [isClosing, setIsClosing] = useState(false);
   const [user, setUser] = useState({
     name: 'John Doe',
     email: 'john@example.com',
@@ -21,16 +22,19 @@ const ProfileSidebar = ({ showProfile, setShowProfile }) => {
 
   return (
     <>
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 z-50 transition-opacity duration-300"
-        onClick={handleClose}
+      <div className={`fixed top-0 right-0 w-full max-w-md h-full z-50 overflow-y-auto transform transition-transform duration-300 ${isClosing ? 'translate-x-full' : 'translate-x-0'}`}
+        style={{
+          boxShadow: '-5px 0 15px rgba(0,0,0,0.1)',
+          backgroundColor: theme.colors.sidebarBg,
+          backdropFilter: 'blur(10px)'
+        }}
       ></div>
-      
+
       <div className="fixed top-0 right-0 w-full md:w-96 h-full bg-white z-50 overflow-y-auto transform transition-transform duration-300">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
             <h2 className="text-2xl font-bold" style={{ color: theme.colors.primary }}>Your Profile</h2>
-            <button 
+            <button
               onClick={handleClose}
               className="text-gray-600 hover:text-gray-800 transition-colors"
             >
@@ -41,9 +45,9 @@ const ProfileSidebar = ({ showProfile, setShowProfile }) => {
           </div>
 
           <div className="flex flex-col items-center mb-6">
-            <img 
-              src={user.image} 
-              alt="Profile" 
+            <img
+              src={user.image}
+              alt="Profile"
               className="w-24 h-24 rounded-full object-cover mb-4"
             />
             {isEditing && (
@@ -51,8 +55,8 @@ const ProfileSidebar = ({ showProfile, setShowProfile }) => {
                 <label className="block text-sm font-medium mb-2 text-center" style={{ color: theme.colors.primary }}>
                   Change Profile Picture
                 </label>
-                <input 
-                  type="file" 
+                <input
+                  type="file"
                   className="block w-full text-sm text-gray-500
                     file:mr-4 file:py-2 file:px-4
                     file:rounded-full file:border-0
@@ -68,10 +72,10 @@ const ProfileSidebar = ({ showProfile, setShowProfile }) => {
             <div>
               <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.primary }}>Name</label>
               {isEditing ? (
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={user.name}
-                  onChange={(e) => setUser({...user, name: e.target.value})}
+                  onChange={(e) => setUser({ ...user, name: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
               ) : (
@@ -87,10 +91,10 @@ const ProfileSidebar = ({ showProfile, setShowProfile }) => {
             <div>
               <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.primary }}>Phone</label>
               {isEditing ? (
-                <input 
-                  type="tel" 
+                <input
+                  type="tel"
                   value={user.phone}
-                  onChange={(e) => setUser({...user, phone: e.target.value})}
+                  onChange={(e) => setUser({ ...user, phone: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
               ) : (
@@ -101,9 +105,9 @@ const ProfileSidebar = ({ showProfile, setShowProfile }) => {
             <div>
               <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.primary }}>Address</label>
               {isEditing ? (
-                <textarea 
+                <textarea
                   value={user.address}
-                  onChange={(e) => setUser({...user, address: e.target.value})}
+                  onChange={(e) => setUser({ ...user, address: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   rows="3"
                 />
@@ -115,13 +119,13 @@ const ProfileSidebar = ({ showProfile, setShowProfile }) => {
             <div className="flex gap-3 mt-6">
               {isEditing ? (
                 <>
-                  <Button 
+                  <Button
                     onClick={() => setIsEditing(false)}
                     className="flex-1"
                   >
                     Save Changes
                   </Button>
-                  <Button 
+                  <Button
                     onClick={() => setIsEditing(false)}
                     type="secondary"
                     className="flex-1"
@@ -130,7 +134,7 @@ const ProfileSidebar = ({ showProfile, setShowProfile }) => {
                   </Button>
                 </>
               ) : (
-                <Button 
+                <Button
                   onClick={() => setIsEditing(true)}
                   className="w-full"
                 >

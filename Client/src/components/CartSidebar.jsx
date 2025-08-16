@@ -51,7 +51,7 @@ const CartSidebar = ({ showCart, setShowCart }) => {
   };
 
   const toggleSelection = (id) => {
-    setCartItems(cartItems.map(item => 
+    setCartItems(cartItems.map(item =>
       item.id === id ? { ...item, selected: !item.selected } : item
     ));
   };
@@ -62,7 +62,7 @@ const CartSidebar = ({ showCart, setShowCart }) => {
 
   const updateQuantity = (id, newQuantity) => {
     if (newQuantity < 1) return;
-    setCartItems(cartItems.map(item => 
+    setCartItems(cartItems.map(item =>
       item.id === id ? { ...item, quantity: newQuantity } : item
     ));
   };
@@ -93,12 +93,15 @@ const CartSidebar = ({ showCart, setShowCart }) => {
 
   return (
     <>
-      <div 
-        className={`fixed inset-0 bg-black bg-opacity-50 z-50 transition-opacity duration-300 ${isClosing ? 'opacity-0' : 'opacity-100'}`}
-        onClick={handleClose}
+      <div className={`fixed top-0 right-0 w-full max-w-md h-full z-50 overflow-y-auto transform transition-transform duration-300 ${isClosing ? 'translate-x-full' : 'translate-x-0'}`}
+        style={{
+          boxShadow: '-5px 0 15px rgba(0,0,0,0.1)',
+          backgroundColor: theme.colors.sidebarBg,
+          backdropFilter: 'blur(10px)'
+        }}
       ></div>
-      
-      <div 
+
+      <div
         className={`fixed top-0 right-0 w-full max-w-md h-full bg-white z-50 overflow-y-auto transform transition-transform duration-300 ${isClosing ? 'translate-x-full' : 'translate-x-0'}`}
         style={{ boxShadow: '-5px 0 15px rgba(0,0,0,0.1)' }}
       >
@@ -106,7 +109,7 @@ const CartSidebar = ({ showCart, setShowCart }) => {
           <div className="flex justify-between items-center mb-4 sm:mb-6 pb-4 border-b border-gray-200">
             <h2 className="text-xl sm:text-2xl font-bold" style={{ color: theme.colors.primary }}>Your Cart</h2>
             <div className="flex gap-2 sm:gap-4">
-              <button 
+              <button
                 onClick={handleDownloadPDF}
                 className="text-gray-600 hover:text-gray-800 transition-colors"
                 title="Download Cart Summary"
@@ -115,7 +118,7 @@ const CartSidebar = ({ showCart, setShowCart }) => {
                   <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
                 </svg>
               </button>
-              <button 
+              <button
                 onClick={handleClose}
                 className="text-gray-600 hover:text-gray-800 transition-colors"
               >
@@ -144,11 +147,11 @@ const CartSidebar = ({ showCart, setShowCart }) => {
           ) : (
             <div className="space-y-3 sm:space-y-4">
               {cartItems.map(item => (
-                <div 
-                  key={item.id} 
+                <div
+                  key={item.id}
                   className={`flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-lg relative transition-all ${item.selected ? 'bg-gray-50' : 'bg-gray-100 opacity-70'}`}
                 >
-                  <button 
+                  <button
                     onClick={() => toggleSelection(item.id)}
                     className={`w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center rounded border mt-1 ${item.selected ? 'bg-green-600 border-green-600' : 'border-gray-400'}`}
                   >
@@ -158,9 +161,9 @@ const CartSidebar = ({ showCart, setShowCart }) => {
                       </svg>
                     )}
                   </button>
-                  <img 
-                    src={item.image} 
-                    alt={item.name} 
+                  <img
+                    src={item.image}
+                    alt={item.name}
                     className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-md"
                   />
                   <div className="flex-1">
@@ -169,14 +172,14 @@ const CartSidebar = ({ showCart, setShowCart }) => {
                     <p className="text-xs text-gray-500 mb-2">Seller: {item.seller}</p>
                     <p className="font-medium text-sm sm:text-base" style={{ color: theme.colors.primary }}>${item.price}</p>
                     <div className="flex items-center gap-2 sm:gap-3 mt-2">
-                      <button 
+                      <button
                         className="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center bg-gray-200 rounded hover:bg-gray-300 transition-colors text-xs sm:text-sm"
                         onClick={() => updateQuantity(item.id, item.quantity - 1)}
                       >
                         -
                       </button>
                       <span className="w-4 text-center text-sm">{item.quantity}</span>
-                      <button 
+                      <button
                         className="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center bg-gray-200 rounded hover:bg-gray-300 transition-colors text-xs sm:text-sm"
                         onClick={() => updateQuantity(item.id, item.quantity + 1)}
                       >
@@ -184,7 +187,7 @@ const CartSidebar = ({ showCart, setShowCart }) => {
                       </button>
                     </div>
                   </div>
-                  <button 
+                  <button
                     className="absolute top-2 right-2 sm:top-4 sm:right-4 text-gray-400 hover:text-red-500 transition-colors"
                     onClick={() => removeItem(item.id)}
                   >
@@ -194,7 +197,7 @@ const CartSidebar = ({ showCart, setShowCart }) => {
                   </button>
                 </div>
               ))}
-              
+
               <div className="mt-4 sm:mt-6 border-t border-gray-200 pt-4">
                 <div className="flex justify-between mb-2 text-sm sm:text-base text-gray-700">
                   <span>Subtotal:</span>
@@ -218,7 +221,7 @@ const CartSidebar = ({ showCart, setShowCart }) => {
                       .toFixed(2)}
                   </span>
                 </div>
-                <Button 
+                <Button
                   onClick={handleProceedToOrder}
                   className="w-full mt-4 sm:mt-6"
                 >
