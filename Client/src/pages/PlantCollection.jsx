@@ -1,4 +1,3 @@
-// src/pages/PlantCollection.jsx
 import { useParams, Link } from 'react-router-dom';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
@@ -90,19 +89,19 @@ const PlantCollection = () => {
     <div className="bg-white">
       <Header />
       
-      <section className="py-16" style={{ backgroundColor: theme.colors.background.light }}>
-        <div className="container mx-auto px-5">
-          <h2 className="text-3xl text-center mb-10" style={{ color: theme.colors.primary }}>
+      <section className="py-8 sm:py-12 md:py-16" style={{ backgroundColor: theme.colors.background.light }}>
+        <div className="container mx-auto px-4 sm:px-5">
+          <h2 className="text-2xl sm:text-3xl text-center mb-6 sm:mb-8 md:mb-10" style={{ color: theme.colors.primary }}>
             {category ? getCategoryName(category) : 'Our Plant Collection'}
           </h2>
           
-          <div className="flex flex-wrap justify-center gap-3 mb-10">
+          <div className="flex flex-wrap justify-center gap-2 sm:gap-3 mb-6 sm:mb-8 md:mb-10">
             {filters.map((filter) => (
               <Button
                 key={filter.id}
                 to={`/plants/${filter.id === 'all' ? '' : filter.id}`}
                 type={(!category && filter.id === 'all') || category === filter.id ? 'primary' : 'secondary'}
-                className="px-4 py-2 rounded-full"
+                className="px-3 py-1 sm:px-4 sm:py-2 rounded-full text-xs sm:text-sm"
               >
                 {filter.name}
               </Button>
@@ -111,29 +110,29 @@ const PlantCollection = () => {
           
           {filteredPlants.length > 0 ? (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 md:gap-8">
                 {filteredPlants.map(plant => (
                   <PlantCard key={plant.id} plant={plant} />
                 ))}
               </div>
               
-              <div className="text-center mt-10">
+              <div className="text-center mt-6 sm:mt-8 md:mt-10">
                 <Button
                   to="/plants"
                   type="primary"
-                  className="px-6 py-3"
+                  className="px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base"
                 >
                   Explore All Plants
                 </Button>
               </div>
             </>
           ) : (
-            <div className="text-center py-10">
-              <p className="text-lg">No plants found in this category.</p>
+            <div className="text-center py-8 sm:py-10">
+              <p className="text-base sm:text-lg">No plants found in this category.</p>
               <Button
                 to="/plants"
                 type="primary"
-                className="mt-4"
+                className="mt-3 sm:mt-4 text-sm sm:text-base"
               >
                 View All Plants
               </Button>

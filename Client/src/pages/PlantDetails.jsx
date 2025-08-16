@@ -1,4 +1,3 @@
-// src/pages/PlantDetails.jsx
 import { useParams } from 'react-router-dom';
 import { useState } from 'react';
 import Header from '../components/Header';
@@ -71,42 +70,42 @@ const PlantDetails = () => {
     <div className="bg-white">
       <Header />
       
-      <section className="py-16" style={{ backgroundColor: theme.colors.background.light }}>
-        <div className="container mx-auto px-5">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+      <section className="py-8 sm:py-12 md:py-16" style={{ backgroundColor: theme.colors.background.light }}>
+        <div className="container mx-auto px-4 sm:px-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 md:gap-10">
             <div>
-              <div className="bg-white p-4 rounded-lg shadow-sm">
+              <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm">
                 <img 
                   src={plant.image} 
                   alt={plant.name} 
-                  className="w-full h-96 object-cover rounded-lg"
+                  className="w-full h-64 sm:h-80 md:h-96 object-cover rounded-lg"
                 />
               </div>
               
-              <div className="mt-8 p-6 bg-white rounded-lg shadow-sm">
-                <h1 className="text-3xl font-bold" style={{ color: theme.colors.primary }}>{plant.name}</h1>
-                <div className="flex items-center gap-2 mt-3">
+              <div className="mt-6 sm:mt-8 p-4 sm:p-6 bg-white rounded-lg shadow-sm">
+                <h1 className="text-2xl sm:text-3xl font-bold" style={{ color: theme.colors.primary }}>{plant.name}</h1>
+                <div className="flex items-center gap-2 mt-2 sm:mt-3">
                   <div className="text-yellow-500">{plant.ratingStars}</div>
-                  <div className="text-gray-600">({plant.reviewCount} reviews)</div>
+                  <div className="text-sm sm:text-base text-gray-600">({plant.reviewCount} reviews)</div>
                 </div>
                 
-                <div className="mt-6">
-                  <h3 className="font-semibold text-lg" style={{ color: theme.colors.primary }}>Description</h3>
-                  <p className="mt-2 text-gray-700">{plant.description}</p>
+                <div className="mt-4 sm:mt-6">
+                  <h3 className="font-semibold text-lg sm:text-xl" style={{ color: theme.colors.primary }}>Description</h3>
+                  <p className="mt-2 text-sm sm:text-base text-gray-700">{plant.description}</p>
                 </div>
                 
-                <div className="mt-6">
-                  <h3 className="font-semibold text-lg" style={{ color: theme.colors.primary }}>Features</h3>
-                  <ul className="list-disc pl-5 mt-2 text-gray-700 space-y-1">
+                <div className="mt-4 sm:mt-6">
+                  <h3 className="font-semibold text-lg sm:text-xl" style={{ color: theme.colors.primary }}>Features</h3>
+                  <ul className="list-disc pl-5 mt-2 text-sm sm:text-base text-gray-700 space-y-1">
                     {plant.features.map((feature, index) => (
                       <li key={index}>{feature}</li>
                     ))}
                   </ul>
                 </div>
                 
-                <div className="mt-6">
-                  <h3 className="font-semibold text-lg" style={{ color: theme.colors.primary }}>Care Tips</h3>
-                  <ul className="list-disc pl-5 mt-2 text-gray-700 space-y-1">
+                <div className="mt-4 sm:mt-6">
+                  <h3 className="font-semibold text-lg sm:text-xl" style={{ color: theme.colors.primary }}>Care Tips</h3>
+                  <ul className="list-disc pl-5 mt-2 text-sm sm:text-base text-gray-700 space-y-1">
                     {plant.careTips.map((tip, index) => (
                       <li key={index}>{tip}</li>
                     ))}
@@ -115,42 +114,42 @@ const PlantDetails = () => {
               </div>
             </div>
             
-            <div className="bg-white p-6 rounded-lg shadow-sm sticky top-4">
-              <h2 className="text-2xl font-bold" style={{ color: theme.colors.primary }}>${plant.sizes[selectedSize].price}</h2>
+            <div className="bg-white p-4 sm:p-6 rounded-lg shadow-sm lg:sticky lg:top-4">
+              <h2 className="text-xl sm:text-2xl font-bold" style={{ color: theme.colors.primary }}>${plant.sizes[selectedSize].price}</h2>
               
-              <div className="mt-6">
-                <h3 className="font-semibold text-lg" style={{ color: theme.colors.primary }}>Select Size:</h3>
-                <div className="space-y-3 mt-3">
+              <div className="mt-4 sm:mt-6">
+                <h3 className="font-semibold text-base sm:text-lg" style={{ color: theme.colors.primary }}>Select Size:</h3>
+                <div className="space-y-2 sm:space-y-3 mt-2 sm:mt-3">
                   {plant.sizes.map((size, index) => (
                     <div 
                       key={index}
                       onClick={() => setSelectedSize(index)}
-                      className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                      className={`p-3 sm:p-4 border rounded-lg cursor-pointer transition-colors ${
                         index === selectedSize ? 'border-green-500 bg-green-50' : 'border-gray-300 hover:border-green-300'
                       }`}
                     >
                       <div className="flex justify-between items-center">
-                        <span className="font-medium">{size.name}</span>
-                        <span className="font-bold" style={{ color: theme.colors.primary }}>${size.price}</span>
+                        <span className="font-medium text-sm sm:text-base">{size.name}</span>
+                        <span className="font-bold text-sm sm:text-base" style={{ color: theme.colors.primary }}>${size.price}</span>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
               
-              <div className="mt-6">
-                <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.primary }}>Quantity</label>
-                <div className="flex items-center gap-4">
+              <div className="mt-4 sm:mt-6">
+                <label className="block text-sm sm:text-base font-medium mb-2" style={{ color: theme.colors.primary }}>Quantity</label>
+                <div className="flex items-center gap-3 sm:gap-4">
                   <button 
                     onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                    className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center hover:bg-gray-300 transition-colors"
+                    className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-200 rounded flex items-center justify-center hover:bg-gray-300 transition-colors"
                   >
                     -
                   </button>
-                  <span className="text-lg">{quantity}</span>
+                  <span className="text-base sm:text-lg">{quantity}</span>
                   <button 
                     onClick={() => setQuantity(quantity + 1)}
-                    className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center hover:bg-gray-300 transition-colors"
+                    className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-200 rounded flex items-center justify-center hover:bg-gray-300 transition-colors"
                   >
                     +
                   </button>
@@ -159,31 +158,31 @@ const PlantDetails = () => {
               
               <Button
                 onClick={addToCart}
-                className="w-full mt-6 py-3 text-lg"
+                className="w-full mt-4 sm:mt-6 py-2 sm:py-3 text-sm sm:text-base"
               >
                 Add to Cart
               </Button>
               
-              <p className="text-sm text-gray-600 mt-3 text-center">
+              <p className="text-xs sm:text-sm text-gray-600 mt-2 sm:mt-3 text-center">
                 Free shipping on orders over $100. Delivery within 3–5 business days.
               </p>
               
-              <div className="mt-8 pt-6 border-t border-gray-200">
-                <h2 className="text-2xl font-semibold mb-6" style={{ color: theme.colors.primary }}>Customer Reviews</h2>
+              <div className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-gray-200">
+                <h2 className="text-xl sm:text-2xl font-semibold mb-4 sm:mb-6" style={{ color: theme.colors.primary }}>Customer Reviews</h2>
                 {plant.reviews.map(review => (
-                  <div key={review.id} className="mb-6 pb-6 border-b border-gray-200 last:border-b-0">
+                  <div key={review.id} className="mb-4 sm:mb-6 pb-4 sm:pb-6 border-b border-gray-200 last:border-b-0">
                     <div className="flex items-center gap-2">
                       <div className="text-yellow-500">{'★'.repeat(review.rating)}</div>
-                      <span className="text-sm text-gray-500">{review.date}</span>
+                      <span className="text-xs sm:text-sm text-gray-500">{review.date}</span>
                     </div>
-                    <p className="mt-2 text-gray-700 italic">"{review.text}"</p>
-                    <p className="text-right text-gray-600 mt-2">– {review.author}</p>
+                    <p className="mt-1 sm:mt-2 text-sm sm:text-base text-gray-700 italic">"{review.text}"</p>
+                    <p className="text-right text-xs sm:text-sm text-gray-600 mt-1 sm:mt-2">– {review.author}</p>
                   </div>
                 ))}
                 
                 <Button
                   type="secondary"
-                  className="w-full mt-4"
+                  className="w-full mt-3 sm:mt-4 text-sm sm:text-base"
                 >
                   Write a Review
                 </Button>

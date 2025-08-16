@@ -1,4 +1,3 @@
-// src/components/Button.jsx
 import { Link } from 'react-router-dom';
 import { theme } from '../theme';
 
@@ -10,7 +9,7 @@ const Button = ({
   className = '', 
   ...props 
 }) => {
-  const baseClasses = 'px-6 py-2 rounded-full font-medium transition-colors duration-300 text-center';
+  const baseClasses = 'px-4 py-2 sm:px-6 sm:py-2 rounded-full font-medium transition-colors duration-300 text-center text-sm sm:text-base';
   
   const typeClasses = {
     primary: `bg-${theme.colors.primary} text-${theme.colors.secondary} hover:bg-${theme.colors.accent}`,

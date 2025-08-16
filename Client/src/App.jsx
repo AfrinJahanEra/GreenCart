@@ -7,6 +7,26 @@ import NotFound from './pages/NotFound';
 import Order from './pages/Order';
 import OrderConfirmation from './pages/OrderConfirmation';
 import { theme } from './theme';
+import SellerDashboard from './pages/SellerDashboard';
+import Dashboard from './pages/seller/Dashboard';
+import Plants from './pages/seller/Plants';
+import Sales from './pages/seller/Sales';
+import AddPlant from './pages/seller/AddPlant';
+import RecordSale from './pages/seller/RecordSale';
+import DeliveryDashboard from './pages/DeliveryDashboard';
+import Assigned from './pages/delivery/Assigned';
+import Pending from './pages/delivery/Pending';
+import Completed from './pages/delivery/Completed';
+import Earnings from './pages/delivery/Earnings';
+import AdminDashboard from './pages/AdminDashboard';
+import AdDashboard from './pages/admin/Dashboard';
+import Customers from './pages/admin/Customers';
+import Delivery from './pages/admin/Delivery';
+import AdSales from './pages/admin/Sales';
+import Orders from './pages/admin/Orders';
+import Reports from './pages/admin/Reports';
+
+
 
 function App() {
   return (
@@ -20,6 +40,30 @@ function App() {
           <Route path="/order" element={<Order />} />
           <Route path="/order-confirmation" element={<OrderConfirmation />} />
           <Route path="*" element={<NotFound />} />
+          <Route path="/seller" element={<SellerDashboard />}>
+            <Route index element={<Dashboard />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="plants" element={<Plants />} />
+            <Route path="sales" element={<Sales />} />
+            <Route path="add-plant" element={<AddPlant />} />
+            <Route path="record-sale" element={<RecordSale />} />
+          </Route>
+          <Route path="/delivery" element={<DeliveryDashboard />}>
+            <Route index element={<Assigned />} />
+            <Route path="assigned" element={<Assigned />} />
+            <Route path="pending" element={<Pending />} />
+            <Route path="completed" element={<Completed />} />
+            <Route path="earnings" element={<Earnings />} />
+          </Route>
+          <Route path="/admin" element={<AdminDashboard />}>
+            <Route index element={<AdDashboard />} />
+            <Route path="dashboard" element={<AdDashboard />} />
+            <Route path="customers" element={<Customers />} />
+            <Route path="delivery" element={<Delivery />} />
+            <Route path="sales" element={<AdSales />} />
+            <Route path="orders" element={<Orders />} />
+            <Route path="reports" element={<Reports />} />
+          </Route>
         </Routes>
       </div>
     </Router>
