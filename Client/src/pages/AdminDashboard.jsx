@@ -1,10 +1,10 @@
-// src/pages/admin/AdminDashboard.jsx
 import { useState } from 'react';
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 
 const AdminDashboard = () => {
     const [activeTab, setActiveTab] = useState('dashboard');
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const navigate = useNavigate();
 
     // Sample data - in a real app, this would come from an API
@@ -43,6 +43,7 @@ const AdminDashboard = () => {
     const handleTabChange = (tab) => {
         setActiveTab(tab);
         navigate(`/admin/${tab}`);
+        setMobileMenuOpen(false); // Close mobile menu when tab changes
     };
 
     const handleAddUser = (type, newUser) => {
@@ -73,8 +74,8 @@ const AdminDashboard = () => {
             <Header />
 
             <div className="flex flex-1">
-                {/* Sidebar */}
-                <div className="w-64 bg-[#224229] text-white p-4 hidden md:block">
+                {/* Sidebar - Updated for mobile responsiveness */}
+                <div className={`${mobileMenuOpen ? 'block' : 'hidden'} md:block fixed md:relative inset-0 z-40 w-64 bg-[#224229] text-white p-4`}>
                     <div className="flex items-center gap-3 mb-8 p-2">
                         <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-[#224229] font-bold">
                             A
@@ -142,15 +143,29 @@ const AdminDashboard = () => {
                         <Link
                             to="/"
                             className="block px-4 py-2 text-sm hover:bg-green-800 rounded-lg transition-colors"
+                            onClick={() => setMobileMenuOpen(false)}
                         >
                             Back to Store
                         </Link>
                     </div>
+
+                    {/* Close button for mobile */}
+                    <button 
+                        className="md:hidden absolute top-4 right-4 text-white"
+                        onClick={() => setMobileMenuOpen(false)}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
                 </div>
 
                 {/* Mobile sidebar toggle */}
                 <div className="md:hidden fixed bottom-4 right-4 z-50">
-                    <button className="w-12 h-12 bg-[#224229] text-white rounded-full shadow-lg flex items-center justify-center">
+                    <button 
+                        className="w-12 h-12 bg-[#224229] text-white rounded-full shadow-lg flex items-center justify-center"
+                        onClick={() => setMobileMenuOpen(true)}
+                    >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                         </svg>

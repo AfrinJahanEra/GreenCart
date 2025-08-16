@@ -1,4 +1,3 @@
-// src/pages/admin/Reports.jsx
 import { useState, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { theme } from '../../theme';
@@ -39,30 +38,6 @@ const Reports = () => {
         message: 'Customer needed low-maintenance plants for office',
         date: '2023-06-14',
         amount: 35
-      },
-      {
-        id: 3,
-        plantId: 103,
-        plantName: 'Fiddle Leaf Fig',
-        plantImage: petFriendlyImg,
-        customerId: 203,
-        customerName: 'Bob Johnson',
-        customerEmail: 'bob@example.com',
-        message: 'Customer wanted pet-friendly options',
-        date: '2023-06-13',
-        amount: 55
-      },
-      {
-        id: 4,
-        plantId: 104,
-        plantName: 'Peace Lily',
-        plantImage: beginnerFriendlyImg,
-        customerId: 204,
-        customerName: 'Alice Williams',
-        customerEmail: 'alice@example.com',
-        message: 'First-time plant owner, needed beginner-friendly advice',
-        date: '2023-06-12',
-        amount: 25
       }
     ],
     deliveries: [
@@ -121,35 +96,23 @@ const Reports = () => {
     html2pdf().from(element).set(opt).save();
   };
 
-  const getPlantImage = (plantId) => {
-    switch(plantId) {
-      case 101: return airPurifyingImg;
-      case 102: return lowLightImg;
-      case 103: return petFriendlyImg;
-      case 104: return beginnerFriendlyImg;
-      default: return airPurifyingImg;
-    }
-  };
-
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <h1 className="text-2xl font-bold" style={{ color: theme.colors.primary }}>Reports & Analytics</h1>
-        <div className="flex gap-4">
-          <button
-            onClick={handleDownloadPDF}
-            className="bg-[#224229] text-white px-4 py-2 rounded-lg hover:bg-[#4b6250] transition-colors flex items-center gap-2"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-            Export PDF
-          </button>
-        </div>
+        <button
+          onClick={handleDownloadPDF}
+          className="bg-[#224229] text-white px-4 py-2 rounded-lg hover:bg-[#4b6250] transition-colors flex items-center gap-2 w-full md:w-auto"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+          </svg>
+          Export PDF
+        </button>
       </div>
 
-      <div className="mb-6">
-        <div className="flex border-b border-gray-200">
+      <div className="mb-6 overflow-x-auto">
+        <div className="flex border-b border-gray-200 w-max md:w-full">
           <button
             onClick={() => setReportType('sales')}
             className={`px-4 py-2 font-medium ${reportType === 'sales' ? 'text-[#224229] border-b-2 border-[#224229]' : 'text-gray-500 hover:text-[#224229]'}`}
@@ -172,7 +135,7 @@ const Reports = () => {
       </div>
 
       <div ref={reportRef} className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           <h2 className="text-xl font-bold mb-4" style={{ color: theme.colors.primary }}>
             {reportType === 'sales' && 'Sales Reports'}
             {reportType === 'deliveries' && 'Delivery Reports'}
@@ -318,26 +281,26 @@ const Reports = () => {
         </div>
       </div>
 
-      <div className="mt-6 bg-white p-6 rounded-lg shadow">
+      <div className="mt-6 bg-white p-4 sm:p-6 rounded-lg shadow">
         <h3 className="text-lg font-semibold mb-4" style={{ color: theme.colors.primary }}>Summary Statistics</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
           <div className="border p-4 rounded-lg">
             <h4 className="text-gray-500 text-sm mb-2">Total Sales</h4>
-            <p className="text-2xl font-bold">
+            <p className="text-xl sm:text-2xl font-bold">
               ${reports.sales.reduce((total, report) => total + report.amount, 0)}
             </p>
             <p className="text-sm text-gray-500 mt-1">{reports.sales.length} transactions</p>
           </div>
           <div className="border p-4 rounded-lg">
             <h4 className="text-gray-500 text-sm mb-2">Completed Deliveries</h4>
-            <p className="text-2xl font-bold">
+            <p className="text-xl sm:text-2xl font-bold">
               {reports.deliveries.length}
             </p>
             <p className="text-sm text-gray-500 mt-1">100% success rate</p>
           </div>
           <div className="border p-4 rounded-lg">
             <h4 className="text-gray-500 text-sm mb-2">Customer Inquiries</h4>
-            <p className="text-2xl font-bold">
+            <p className="text-xl sm:text-2xl font-bold">
               {reports.inquiries.length}
             </p>
             <p className="text-sm text-gray-500 mt-1">
