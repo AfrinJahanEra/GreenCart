@@ -1,0 +1,118 @@
+// src/pages/orderdashboard/OrderDashboard.jsx
+import { Outlet, Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import Header from '../../components/Header';
+import Footer from '../../components/Footer';
+
+const OrderDashboard = () => {
+  const [activeTab, setActiveTab] = useState('all');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const navigate = useNavigate();
+
+  return (
+    <div className="flex flex-col min-h-screen bg-[#fbf7ed]">
+      <Header />
+      
+      <div className="flex flex-1">
+        {/* Sidebar - Updated to match Admin Dashboard */}
+        <div className={`${mobileMenuOpen ? 'block' : 'hidden'} md:block fixed md:relative inset-0 z-40 w-64 bg-[#224229] text-white p-4`}>
+          <div className="flex items-center gap-3 mb-8 p-2">
+            <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-[#224229] font-bold">
+              JD
+            </div>
+            <div>
+              <p className="font-medium">Jane Doe</p>
+              <p className="text-xs text-green-200">Customer</p>
+            </div>
+          </div>
+
+          <nav>
+            <ul className="space-y-2">
+              <li>
+                <button
+                  onClick={() => {
+                    setActiveTab('all');
+                    navigate('/orders/all');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                    activeTab === 'all' ? 'bg-green-700' : 'hover:bg-green-800'
+                  }`}
+                >
+                  All Orders
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => {
+                    setActiveTab('pending');
+                    navigate('/orders/pending');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                    activeTab === 'pending' ? 'bg-green-700' : 'hover:bg-green-800'
+                  }`}
+                >
+                  Pending Orders
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => {
+                    setActiveTab('delivered');
+                    navigate('/orders/delivered');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                    activeTab === 'delivered' ? 'bg-green-700' : 'hover:bg-green-800'
+                  }`}
+                >
+                  Delivered Orders
+                </button>
+              </li>
+            </ul>
+          </nav>
+
+          <div className="mt-8 pt-4 border-t border-green-700">
+            <Link
+              to="/"
+              className="block px-4 py-2 text-sm hover:bg-green-800 rounded-lg transition-colors"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              Back to Shopping
+            </Link>
+          </div>
+          
+          {/* Close button for mobile */}
+          <button 
+            className="md:hidden absolute top-4 right-4 text-white"
+            onClick={() => setMobileMenuOpen(false)}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Mobile sidebar toggle */}
+        <div className="md:hidden fixed bottom-4 right-4 z-50">
+          <button 
+            className="w-12 h-12 bg-[#224229] text-white rounded-full shadow-lg flex items-center justify-center"
+            onClick={() => setMobileMenuOpen(true)}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Main content */}
+        <div className="flex-1 p-4 md:p-8 bg-white">
+          <Outlet />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default OrderDashboard;
