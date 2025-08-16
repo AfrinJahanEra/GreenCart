@@ -1,35 +1,41 @@
-import { Link } from 'react-router-dom'
+// src/components/PlantCard.jsx
+import { Link } from 'react-router-dom';
+import { theme } from '../theme';
+import Button from './Button';
 
 const PlantCard = ({ plant }) => {
   return (
-    <div className="bg-white shadow-md overflow-hidden">
-      <Link to={`/plant/${plant.id}`}>
+    <div className="bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-300">
+      <Link to={`/plant/${plant.id}`} className="block overflow-hidden">
         <img 
           src={plant.image} 
           alt={plant.name} 
-          className="w-full h-64 object-cover hover:opacity-90 transition-opacity"
+          className="w-full h-64 object-cover transform hover:scale-105 transition-transform duration-500"
         />
       </Link>
       <div className="p-4">
-        <div className="flex justify-between items-center">
-          <Link to={`/plant/${plant.id}`} className="font-semibold text-[#224229] hover:underline">
+        <div className="flex justify-between items-start">
+          <Link to={`/plant/${plant.id}`} className="font-medium" style={{ color: theme.colors.primary }}>
             {plant.name}
           </Link>
-          <span className="font-bold text-[#224229]">${plant.price}</span>
+          <span className="font-bold" style={{ color: theme.colors.primary }}>${plant.price}</span>
         </div>
         <div className="flex items-center gap-1 mt-2 text-sm text-gray-600">
           <div className="text-yellow-500">{plant.ratingStars}</div>
           <div>({plant.reviewCount})</div>
         </div>
-        <Link 
-          to={`/plant/${plant.id}`}
-          className="block mt-3 mx-auto w-max bg-[#224229] text-[#f7f0e1] px-4 py-2 rounded-full text-sm hover:bg-[#4b6250] transition-colors"
-        >
-          Shop Now
-        </Link>
+        <div className="mt-4">
+          <Button 
+            to={`/plant/${plant.id}`}
+            type="primary"
+            className="w-full"
+          >
+            View Details
+          </Button>
+        </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default PlantCard
+export default PlantCard;

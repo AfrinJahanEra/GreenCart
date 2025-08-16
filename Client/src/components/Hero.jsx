@@ -1,20 +1,39 @@
-import React from 'react';
+import { Link } from 'react-router-dom';
+import Button from './Button';
 
 const Hero = () => {
+  const heroImageUrl = 'https://images.pexels.com/photos/1006293/pexels-photo-1006293.jpeg?auto=compress&cs=tinysrgb&w=1500';
+  console.log('HeroImageUrl:', heroImageUrl);
+
   return (
-    <section className="relative py-16 text-center text-white overflow-hidden">
-      <div className="absolute inset-0 bg-[url('plant_bg.jpg')] bg-cover bg-center filter saturate-80 contrast-70 -z-10"></div>
+    <section className="relative h-[70vh] text-center text-white flex items-center justify-center overflow-hidden">
+      <div className="absolute inset-0">
+        <img
+          src={heroImageUrl}
+          alt="Plant background"
+          className="w-full h-full object-cover"
+          onError={(e) => {
+            console.error('Failed to load Hero image, using fallback');
+            e.target.onerror = null;
+            e.target.src = 'https://images.pexels.com/photos/1301856/pexels-photo-1301856.jpeg?auto=compress&cs=tinysrgb&w=1500';
+          }}
+        />
+        <div className="absolute inset-0" style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}></div>
+      </div>
       <div className="container mx-auto px-5 relative z-10">
-        <h1 className="text-4xl md:text-5xl mb-5">Plants Make People Happy</h1>
-        <p className="text-xl max-w-2xl mx-auto mb-8">
+        <h1 className="text-4xl md:text-6xl font-bold mb-5 drop-shadow-lg">
+          Plants Make People Happy
+        </h1>
+        <p className="text-xl md:text-2xl max-w-2xl mx-auto mb-8 drop-shadow-md">
           We've curated the perfect plants for your busy life. Delivered to your door, ready to enjoy.
         </p>
-        <a 
-          href="#" 
-          className="inline-block bg-white text-[#224229] px-7 py-3 text-lg rounded-full font-normal transition-colors duration-300 hover:bg-[#d7c9a9]"
+        <Button
+          to="/plants"
+          type="primary"
+          className="text-lg px-8 py-3 inline-block hover:scale-105 transition-transform"
         >
           Shop Plants
-        </a>
+        </Button>
       </div>
     </section>
   );

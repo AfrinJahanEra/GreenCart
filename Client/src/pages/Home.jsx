@@ -1,181 +1,181 @@
-import Header from '../components/Header'
-import Footer from '../components/Footer'
-import CategoryCard from '../components/CategoryCard'
-import PlantCard from '../components/PlantCard'
-import TestimonialCard from '../components/TestimonialCard'
-import { Link } from 'react-router-dom'
+import Header from '../components/Header';
+import Footer from '../components/Footer';
+import PlantCard from '../components/PlantCard';
+import Button from '../components/Button';
+import Hero from '../components/Hero'; // Import Hero component
+import { theme } from '../theme';
+import { Link } from 'react-router-dom';
+import lowLightImg from '../assets/ardella.jpeg';
+import petFriendlyImg from '../assets/margent.jpeg';
+import airPurifyingImg from '../assets/snake.jpeg';
+import beginnerFriendlyImg from '../assets/Blosom.jpeg';
 
 const Home = () => {
-  // Sample data - in a real app, this would come from an API
-  const categories = [
-    {
-      id: 1,
-      name: 'Low Light Plants',
-      description: 'Thrives in low light conditions, perfect for offices and darker rooms.',
-      image: 'https://images.unsplash.com/photo-1485955900006-10f4d324d411?ixlib=rb-1.2.1&auto=format&fit=crop&w=1000&q=80',
-      slug: 'low-light'
-    },
-    {
-      id: 2,
-      name: 'Pet Friendly Plants',
-      description: 'Safe for pets. Add greenery without worry for your furry friends.',
-      image: 'https://images.unsplash.com/photo-1591958911319-0fe5a7f04319?ixlib=rb-1.2.1&auto=format&fit=crop&w=1000&q=80',
-      slug: 'pet-friendly'
-    },
-    {
-      id: 3,
-      name: 'Easy Care Plants',
-      description: 'Perfect for beginners or those with busy schedules.',
-      image: 'https://images.unsplash.com/photo-1520412099551-62b6bafeb5bb?ixlib=rb-1.2.1&auto=format&fit=crop&w=1000&q=80',
-      slug: 'easy-care'
-    },
-    {
-      id: 4,
-      name: 'Easy Care Plants',
-      description: 'Perfect for beginners or those with busy schedules.',
-      image: 'https://images.unsplash.com/photo-1520412099551-62b6bafeb5bb?ixlib=rb-1.2.1&auto=format&fit=crop&w=1000&q=80',
-      slug: 'easy-care'
-    }
-  ]
-
   const popularPlants = [
     {
       id: 1,
-      name: 'Fiddle Leaf Fig',
-      price: 25,
+      name: 'Monstera Deliciosa',
+      price: 45,
       ratingStars: '★★★★★',
-      reviewCount: 240,
-      image: 'https://images.unsplash.com/photo-1591958911319-0fe5a7f04319?ixlib=rb-1.2.1&auto=format&fit=crop&w=1000&q=80'
+      reviewCount: 520,
+      image: airPurifyingImg
     },
     {
       id: 2,
       name: 'Snake Plant',
       price: 35,
       ratingStars: '★★★★☆',
-      reviewCount: 180,
-      image: 'https://images.unsplash.com/photo-1591958911319-0fe5a7f04319?ixlib=rb-1.2.1&auto=format&fit=crop&w=1000&q=80'
+      reviewCount: 428,
+      image: lowLightImg
     },
     {
       id: 3,
-      name: 'Monstera Deliciosa',
-      price: 45,
+      name: 'Fiddle Leaf Fig',
+      price: 55,
       ratingStars: '★★★★★',
-      reviewCount: 320,
-      image: 'https://images.unsplash.com/photo-1591958911319-0fe5a7f04319?ixlib=rb-1.2.1&auto=format&fit=crop&w=1000&q=80'
+      reviewCount: 312,
+      image: petFriendlyImg
     },
     {
       id: 4,
-      name: 'Monstera Deliciosa',
-      price: 45,
+      name: 'Peace Lily',
+      price: 25,
       ratingStars: '★★★★★',
-      reviewCount: 320,
-      image: 'https://images.unsplash.com/photo-1591958911319-0fe5a7f04319?ixlib=rb-1.2.1&auto=format&fit=crop&w=1000&q=80'
+      reviewCount: 210,
+      image: beginnerFriendlyImg
     }
-  ]
+  ];
+
+  const categories = [
+    {
+      id: 1,
+      name: 'Low Light Plants',
+      description: 'Thrives in low light conditions',
+      image: lowLightImg,
+      slug: 'low-light'
+    },
+    {
+      id: 2,
+      name: 'Pet Friendly',
+      description: 'Safe for your furry friends',
+      image: petFriendlyImg,
+      slug: 'pet-friendly'
+    },
+    {
+      id: 3,
+      name: 'Air Purifying',
+      description: 'Cleans the air naturally',
+      image: airPurifyingImg,
+      slug: 'air-purifying'
+    },
+    {
+      id: 4,
+      name: 'Beginner Friendly',
+      description: 'Easy to care for',
+      image: beginnerFriendlyImg,
+      slug: 'beginner-friendly'
+    }
+  ];
 
   const testimonials = [
     {
       id: 1,
-      name: 'Ridika Naznin',
-      quote: 'My plants arrived in perfect condition and have been thriving ever since. The care instructions were so helpful!',
+      name: 'Sarah Johnson',
+      quote: 'My plants arrived in perfect condition and have been thriving ever since!',
       image: 'https://randomuser.me/api/portraits/women/44.jpg'
     },
     {
       id: 2,
-      name: 'Ramisa Anan',
-      quote: "I've never been able to keep plants alive before, but GreenScape's easy-care plants are perfect for me.",
-      image: 'https://randomuser.me/api/portraits/women/68.jpg'
+      name: 'Michael Chen',
+      quote: 'Excellent customer service and beautiful, healthy plants.',
+      image: 'https://randomuser.me/api/portraits/men/32.jpg'
     },
     {
       id: 3,
-      name: 'Afrin Jahan',
-      quote: 'Beautiful packaging and fast delivery. The perfect gift for my plant-loving friend!',
-      image: 'https://randomuser.me/api/portraits/women/32.jpg'
-    },
-    {
-      id: 4,
-      name: 'Afrin Jahan',
-      quote: 'Beautiful packaging and fast delivery. The perfect gift for my plant-loving friend!',
-      image: 'https://randomuser.me/api/portraits/women/32.jpg'
+      name: 'Priya Patel',
+      quote: 'The perfect gift for my plant-loving friend!',
+      image: 'https://randomuser.me/api/portraits/women/68.jpg'
     }
-  ]
+  ];
 
   return (
     <div className="bg-white">
       <Header />
-      
-      {/* Hero Section */}
-      <section className="relative py-20 text-center text-white">
-        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1485955900006-10f4d324d411?ixlib=rb-1.2.1&auto=format&fit=crop&w=1000&q=80')] bg-cover bg-center filter saturate-80 contrast-70 -z-10"></div>
+      <Hero /> {/* Use Hero component */}
+      <section className="py-16" style={{ backgroundColor: theme.colors.background.light }}>
         <div className="container mx-auto px-5">
-          <h1 className="text-4xl md:text-5xl font-bold mb-5">Plants Make People Happy</h1>
-          <p className="text-xl max-w-2xl mx-auto mb-8">
-            We've curated the perfect plants for your busy life. Delivered to your door, ready to enjoy.
-          </p>
-          <Link 
-            to="/plants" 
-            className="inline-block bg-white text-[#224229] px-8 py-3 rounded-full text-lg hover:bg-[#d7c9a9]"
-          >
-            Shop Plants
-          </Link>
-        </div>
-      </section>
-
-      {/* Categories Section */}
-      <section className="py-16 bg-[#f7f0e1]">
-        <div className="container mx-auto px-5">
-          <h2 className="text-3xl text-[#224229] text-center mb-10">Find Your Perfect Plant</h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          <h2 className="text-3xl text-center mb-10" style={{ color: theme.colors.primary }}>
+            Find Your Perfect Plant
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {categories.map(category => (
-              <CategoryCard key={category.id} category={category} />
+              <div key={category.id} className="bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300">
+                <Link to={`/plants/${category.slug}`}>
+                  <img
+                    src={category.image}
+                    alt={category.name}
+                    className="w-full h-64 object-cover hover:scale-105 transition-transform duration-500"
+                  />
+                </Link>
+                <div className="p-4 text-center">
+                  <h3 className="font-medium text-lg" style={{ color: theme.colors.primary }}>
+                    {category.name}
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-2 italic">
+                    {category.description}
+                  </p>
+                  <Button
+                    to={`/plants/${category.slug}`}
+                    type="text"
+                    className="mt-4 text-sm"
+                  >
+                    View Collection
+                  </Button>
+                </div>
+              </div>
             ))}
           </div>
-          <div className="text-center mt-8">
-            <Link 
-              to="/plants" 
-              className="text-[#224229] text-xl underline hover:text-[#4b6250]"
-            >
-              Explore All
-            </Link>
-          </div>
         </div>
       </section>
-      
-      {/* Popular Plants Section */}
-      <section className="py-16 bg-[#f7f0e1]">
+      <section className="py-16" style={{ backgroundColor: theme.colors.background.light }}>
         <div className="container mx-auto px-5">
-          <h2 className="text-3xl text-[#224229] text-center mb-10">Our Most Popular Plants</h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          <h2 className="text-3xl text-center mb-10" style={{ color: theme.colors.primary }}>
+            Our Most Popular Plants
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {popularPlants.map(plant => (
               <PlantCard key={plant.id} plant={plant} />
             ))}
           </div>
-          <div className="text-center mt-8">
-            <Link 
-              to="/plants" 
-              className="text-[#224229] text-xl underline hover:text-[#4b6250]"
-            >
-              Explore All Plants
-            </Link>
-          </div>
         </div>
       </section>
-      
-      {/* Testimonials Section */}
-      <section className="py-16 bg-[#f7f0e1]">
+      <section className="py-16" style={{ backgroundColor: theme.colors.background.light }}>
         <div className="container mx-auto px-5">
-          <h2 className="text-3xl text-[#224229] text-center mb-10">What Our Customers Say</h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          <h2 className="text-3xl text-center mb-10" style={{ color: theme.colors.primary }}>
+            What Our Customers Say
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {testimonials.map(testimonial => (
-              <TestimonialCard key={testimonial.id} testimonial={testimonial} />
+              <div key={testimonial.id} className="bg-white p-6 rounded-lg shadow-sm hover:shadow-md transition-shadow">
+                <img
+                  src={testimonial.image}
+                  alt={testimonial.name}
+                  className="w-20 h-20 rounded-full mx-auto mb-5 object-cover"
+                />
+                <h3 className="text-lg font-semibold text-center" style={{ color: theme.colors.primary }}>
+                  {testimonial.name}
+                </h3>
+                <p className="text-gray-600 text-center italic mt-2">
+                  "{testimonial.quote}"
+                </p>
+              </div>
             ))}
           </div>
         </div>
       </section>
-      
       <Footer />
     </div>
-  )
-}
+  );
+};
 
-export default Home
+export default Home;

@@ -1,17 +1,21 @@
-import { useState, useRef } from 'react';
+// src/components/CartSidebar.jsx
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import html2pdf from 'html2pdf.js';
+import { theme } from '../theme';
+import Button from './Button';
 
 const CartSidebar = ({ showCart, setShowCart }) => {
   const navigate = useNavigate();
   const sidebarRef = useRef();
+  const [isClosing, setIsClosing] = useState(false);
   const [cartItems, setCartItems] = useState([
     {
       id: 1,
-      name: 'Bromeliad Pineapple',
-      price: 54,
-      image: 'https://images.unsplash.com/photo-1591958911319-0fe5a7f04319?ixlib=rb-1.2.1&auto=format&fit=crop&w=1000&q=80',
-      size: 'Small',
+      name: 'Monstera Deliciosa',
+      price: 45,
+      image: 'https://images.unsplash.com/photo-1525947088131-b701cd0f6dc3?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80',
+      size: 'Medium',
       quantity: 1,
       selected: true,
       seller: 'plantguru@example.com'
@@ -19,14 +23,33 @@ const CartSidebar = ({ showCart, setShowCart }) => {
     {
       id: 2,
       name: 'Snake Plant',
-      price: 65,
-      image: 'https://images.unsplash.com/photo-1591958911319-0fe5a7f04319?ixlib=rb-1.2.1&auto=format&fit=crop&w=1000&q=80',
-      size: 'Medium',
+      price: 35,
+      image: 'https://images.unsplash.com/photo-1586220742613-b731f66f7743?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80',
+      size: 'Large',
       quantity: 1,
       selected: true,
       seller: 'greenthumb@example.com'
     }
   ]);
+
+  useEffect(() => {
+    if (showCart) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'auto';
+    }
+    return () => {
+      document.body.style.overflow = 'auto';
+    };
+  }, [showCart]);
+
+  const handleClose = () => {
+    setIsClosing(true);
+    setTimeout(() => {
+      setShowCart(false);
+      setIsClosing(false);
+    }, 300);
+  };
 
   const toggleSelection = (id) => {
     setCartItems(cartItems.map(item => 
@@ -63,7 +86,7 @@ const CartSidebar = ({ showCart, setShowCart }) => {
       alert('Please select at least one item to proceed');
       return;
     }
-    setShowCart(false);
+    handleClose();
     navigate('/order', { state: { items: selectedItems } });
   };
 
@@ -72,70 +95,90 @@ const CartSidebar = ({ showCart, setShowCart }) => {
   return (
     <>
       <div 
-        className="fixed inset-0 bg-black bg-opacity-50 z-50"
-        onClick={() => setShowCart(false)}
+        className={`fixed inset-0 bg-black bg-opacity-50 z-50 transition-opacity duration-300 ${isClosing ? 'opacity-0' : 'opacity-100'}`}
+        onClick={handleClose}
       ></div>
       
-      <div className="fixed top-0 right-0 w-full md:w-1/2 lg:w-1/3 h-full bg-[#224229] text-white z-50 overflow-y-auto">
+      <div 
+        className={`fixed top-0 right-0 w-full md:w-96 h-full bg-white z-50 overflow-y-auto transform transition-transform duration-300 ${isClosing ? 'translate-x-full' : 'translate-x-0'}`}
+        style={{ boxShadow: '-5px 0 15px rgba(0,0,0,0.1)' }}
+      >
         <div className="p-6" ref={sidebarRef}>
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold">Your Cart</h2>
+          <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
+            <h2 className="text-2xl font-bold" style={{ color: theme.colors.primary }}>Your Cart</h2>
             <div className="flex gap-4">
               <button 
                 onClick={handleDownloadPDF}
-                className="text-white hover:text-[#f7f0e1]"
+                className="text-gray-600 hover:text-gray-800 transition-colors"
                 title="Download Cart Summary"
               >
-                <i className="fas fa-download"></i>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
               </button>
               <button 
-                onClick={() => setShowCart(false)}
-                className="text-2xl hover:text-[#f7f0e1]"
+                onClick={handleClose}
+                className="text-gray-600 hover:text-gray-800 transition-colors"
               >
-                &times;
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
           </div>
 
           {cartItems.length === 0 ? (
             <div className="text-center py-10">
-              <i className="fas fa-shopping-cart text-4xl mb-4 opacity-50"></i>
-              <p className="text-lg">Your cart is empty</p>
-              <p className="mt-2 text-[#f7f0e1]">Start shopping to add items to your cart</p>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              <p className="text-lg font-medium text-gray-700">Your cart is empty</p>
+              <p className="mt-2 text-gray-500">Start shopping to add items to your cart</p>
+              <Button
+                onClick={handleClose}
+                type="secondary"
+                className="mt-4"
+              >
+                Continue Shopping
+              </Button>
             </div>
           ) : (
             <div className="space-y-4">
               {cartItems.map(item => (
                 <div 
                   key={item.id} 
-                  className={`flex items-start gap-4 p-4 rounded-lg relative ${item.selected ? 'bg-[#2d5133]' : 'bg-[#224229] opacity-70'}`}
+                  className={`flex items-start gap-4 p-4 rounded-lg relative transition-all ${item.selected ? 'bg-gray-50' : 'bg-gray-100 opacity-70'}`}
                 >
                   <button 
                     onClick={() => toggleSelection(item.id)}
-                    className={`w-5 h-5 flex items-center justify-center rounded border ${item.selected ? 'bg-[#f7f0e1] border-[#f7f0e1]' : 'border-white'}`}
+                    className={`w-5 h-5 flex items-center justify-center rounded border mt-1 ${item.selected ? 'bg-green-600 border-green-600' : 'border-gray-400'}`}
                   >
-                    {item.selected && <i className="fas fa-check text-[#224229] text-xs"></i>}
+                    {item.selected && (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    )}
                   </button>
                   <img 
                     src={item.image} 
                     alt={item.name} 
-                    className="w-20 h-20 object-cover rounded"
+                    className="w-20 h-20 object-cover rounded-md"
                   />
                   <div className="flex-1">
-                    <h3 className="font-semibold">{item.name}</h3>
-                    <p className="text-[#f7f0e1] text-sm mb-1">Size: {item.size}</p>
-                    <p className="text-[#f7f0e1] text-xs mb-2">Seller: {item.seller}</p>
-                    <p className="font-medium">${item.price}</p>
+                    <h3 className="font-medium text-gray-900">{item.name}</h3>
+                    <p className="text-sm text-gray-600 mb-1">Size: {item.size}</p>
+                    <p className="text-xs text-gray-500 mb-2">Seller: {item.seller}</p>
+                    <p className="font-medium" style={{ color: theme.colors.primary }}>${item.price}</p>
                     <div className="flex items-center gap-3 mt-2">
                       <button 
-                        className="w-6 h-6 flex items-center justify-center bg-[#224229] rounded hover:bg-[#1a3320]"
+                        className="w-6 h-6 flex items-center justify-center bg-gray-200 rounded hover:bg-gray-300 transition-colors"
                         onClick={() => updateQuantity(item.id, item.quantity - 1)}
                       >
                         -
                       </button>
                       <span className="w-6 text-center">{item.quantity}</span>
                       <button 
-                        className="w-6 h-6 flex items-center justify-center bg-[#224229] rounded hover:bg-[#1a3320]"
+                        className="w-6 h-6 flex items-center justify-center bg-gray-200 rounded hover:bg-gray-300 transition-colors"
                         onClick={() => updateQuantity(item.id, item.quantity + 1)}
                       >
                         +
@@ -143,16 +186,18 @@ const CartSidebar = ({ showCart, setShowCart }) => {
                     </div>
                   </div>
                   <button 
-                    className="absolute top-4 right-4 text-red-300 hover:text-red-400"
+                    className="absolute top-4 right-4 text-gray-400 hover:text-red-500 transition-colors"
                     onClick={() => removeItem(item.id)}
                   >
-                    <i className="fas fa-trash"></i>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
                   </button>
                 </div>
               ))}
               
-              <div className="mt-6 border-t border-[#f7f0e1] pt-4">
-                <div className="flex justify-between mb-2">
+              <div className="mt-6 border-t border-gray-200 pt-4">
+                <div className="flex justify-between mb-2 text-gray-700">
                   <span>Subtotal:</span>
                   <span>
                     ${cartItems
@@ -161,25 +206,25 @@ const CartSidebar = ({ showCart, setShowCart }) => {
                       .toFixed(2)}
                   </span>
                 </div>
-                <div className="flex justify-between mb-2">
+                <div className="flex justify-between mb-2 text-gray-700">
                   <span>Shipping:</span>
                   <span>$9.95</span>
                 </div>
-                <div className="flex justify-between font-bold text-lg mt-4">
+                <div className="flex justify-between font-bold text-lg mt-4 pt-3 border-t border-gray-200">
                   <span>Total:</span>
-                  <span>
+                  <span style={{ color: theme.colors.primary }}>
                     ${(cartItems
                       .filter(item => item.selected)
                       .reduce((total, item) => total + (item.price * item.quantity), 0) + 9.95)
                       .toFixed(2)}
                   </span>
                 </div>
-                <button 
+                <Button 
                   onClick={handleProceedToOrder}
-                  className="w-full bg-[#f7f0e1] text-[#224229] py-3 rounded-lg font-bold mt-4 hover:bg-[#e5dcc9] transition-colors"
+                  className="w-full mt-6"
                 >
                   Proceed to Order
-                </button>
+                </Button>
               </div>
             </div>
           )}
