@@ -1,4 +1,5 @@
-// src/theme.js
+
+
 export const theme = {
   colors: {
     primary: '#224229', // Dark green
