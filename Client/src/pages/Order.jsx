@@ -114,17 +114,24 @@ const Order = () => {
   };
 
   return (
-    <div className="bg-[#fbf7ed] min-h-screen font-sans">
+    <div className={`min-h-screen`} style={{ 
+      backgroundColor: theme.colors.secondary,
+      fontFamily: theme.fonts.secondary
+    }}>
       <Header />
       
       <section className="p-6 max-w-7xl mx-auto">
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Main Order Form */}
           <div className="lg:w-2/3">
-            <h1 className="text-3xl font-semibold text-gray-900 mb-6">Complete Your Order</h1>
+            <h1 className="text-3xl font-semibold mb-6" style={{ color: theme.colors.text.primary }}>
+              Complete Your Order
+            </h1>
             
             <div className="mb-6">
-              <h2 className="text-xl font-medium text-gray-900 mb-4">Delivery Method</h2>
+              <h2 className="text-xl font-medium mb-4" style={{ color: theme.colors.text.primary }}>
+                Delivery Method
+              </h2>
               <div className="space-y-4">
                 {deliveryMethods.map(method => (
                   <div 
@@ -135,62 +142,81 @@ const Order = () => {
                         ? 'border-green-600 bg-green-50' 
                         : 'border-gray-200 hover:border-green-600'
                     }`}
+                    style={{ backgroundColor: order.deliveryMethod?.id === method.id ? theme.colors.secondary : 'white' }}
                   >
                     <div className="flex justify-between items-center">
-                      <span className="font-medium text-base">{method.name}</span>
-                      <span className="font-semibold text-green-600">
+                      <span className="font-medium text-base" style={{ color: theme.colors.text.primary }}>
+                        {method.name}
+                      </span>
+                      <span className="font-semibold" style={{ color: theme.colors.accent }}>
                         {method.price > 0 ? `$${method.price.toFixed(2)}` : 'Free'}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-500 mt-1">{method.time}</p>
+                    <p className="text-sm mt-1" style={{ color: theme.colors.text.secondary }}>
+                      {method.time}
+                    </p>
                   </div>
                 ))}
               </div>
             </div>
 
             <div>
-              <h2 className="text-xl font-medium text-gray-900 mb-4">Your Information</h2>
+              <h2 className="text-xl font-medium mb-4" style={{ color: theme.colors.text.primary }}>
+                Your Information
+              </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
+                  <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.text.primary }}>
+                    Full Name *
+                  </label>
                   <input 
                     type="text" 
                     name="name"
                     value={order.customerInfo.name}
                     onChange={handleInputChange}
                     className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:border-transparent text-base"
+                    style={{ color: theme.colors.text.primary }}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number *</label>
+                  <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.text.primary }}>
+                    Phone Number *
+                  </label>
                   <input 
                     type="tel" 
                     name="phone"
                     value={order.customerInfo.phone}
                     onChange={handleInputChange}
                     className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:border-transparent text-base"
+                    style={{ color: theme.colors.text.primary }}
                     required
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Address *</label>
+                  <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.text.primary }}>
+                    Delivery Address *
+                  </label>
                   <input 
                     type="text" 
                     name="address"
                     value={order.customerInfo.address}
                     onChange={handleInputChange}
                     className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:border-transparent text-base"
+                    style={{ color: theme.colors.text.primary }}
                     required
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Notes (Optional)</label>
+                  <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.text.primary }}>
+                    Delivery Notes (Optional)
+                  </label>
                   <textarea
                     name="notes"
                     value={order.customerInfo.notes}
                     onChange={handleInputChange}
                     className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:border-transparent text-base"
+                    style={{ color: theme.colors.text.primary }}
                     rows="4"
                   />
                 </div>
@@ -200,7 +226,12 @@ const Order = () => {
             <div className="flex justify-end mt-6">
               <button 
                 onClick={handleSubmitOrder}
-                className="bg-green-600 text-white p-4 rounded-lg font-semibold hover:bg-green-700 transition-colors text-base"
+                className="p-4 rounded-lg font-semibold transition-colors text-base"
+                style={{ 
+                  backgroundColor: theme.colors.primary,
+                  color: theme.colors.text.light,
+                  ':hover': { backgroundColor: theme.colors.accent }
+                }}
               >
                 Confirm Order
               </button>
@@ -211,10 +242,13 @@ const Order = () => {
           <div className="lg:w-1/3">
             <div ref={sidebarRef} className="bg-white border border-gray-200 rounded-lg p-6 sticky top-6">
               <div className="flex justify-between items-center mb-6 border-b border-gray-200 pb-4">
-                <h2 className="text-xl font-semibold text-gray-900">Order Summary</h2>
+                <h2 className="text-xl font-semibold" style={{ color: theme.colors.text.primary }}>
+                  Order Summary
+                </h2>
                 <button 
                   onClick={handleDownloadPDF}
-                  className="text-green-600 hover:text-green-700 transition-colors"
+                  className="transition-colors"
+                  style={{ color: theme.colors.accent }}
                   title="Download Order Summary"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -226,10 +260,14 @@ const Order = () => {
               <div className="mb-6">
                 <div className="flex justify-between items-start mb-4">
                   <div>
-                    <h3 className="font-semibold text-base text-gray-900">Order #{order.orderNumber}</h3>
-                    <p className="text-sm text-gray-600">Status: <span className="text-green-600 font-medium">{order.status}</span></p>
+                    <h3 className="font-semibold text-base" style={{ color: theme.colors.text.primary }}>
+                      Order #{order.orderNumber}
+                    </h3>
+                    <p className="text-sm" style={{ color: theme.colors.text.secondary }}>
+                      Status: <span style={{ color: theme.colors.accent, fontWeight: '500' }}>{order.status}</span>
+                    </p>
                   </div>
-                  <p className="text-sm text-gray-600">{order.orderDate}</p>
+                  <p className="text-sm" style={{ color: theme.colors.text.secondary }}>{order.orderDate}</p>
                 </div>
                 
                 <div className="space-y-4 mb-6">
@@ -241,11 +279,17 @@ const Order = () => {
                         className="w-16 h-16 object-cover rounded-md"
                       />
                       <div className="flex-1">
-                        <h4 className="font-medium text-base text-gray-900">{item.name}</h4>
-                        <p className="text-sm text-gray-600">Size: {item.size}</p>
-                        <p className="text-sm text-gray-600">Qty: {item.quantity}</p>
-                        <p className="font-semibold text-base text-gray-900 mt-1">${(item.price * item.quantity).toFixed(2)}</p>
-                        <p className="text-xs text-gray-500 mt-1">Seller: {item.seller}</p>
+                        <h4 className="font-medium text-base" style={{ color: theme.colors.text.primary }}>
+                          {item.name}
+                        </h4>
+                        <p className="text-sm" style={{ color: theme.colors.text.secondary }}>Size: {item.size}</p>
+                        <p className="text-sm" style={{ color: theme.colors.text.secondary }}>Qty: {item.quantity}</p>
+                        <p className="font-semibold text-base mt-1" style={{ color: theme.colors.text.primary }}>
+                          ${(item.price * item.quantity).toFixed(2)}
+                        </p>
+                        <p className="text-xs mt-1" style={{ color: theme.colors.text.secondary }}>
+                          Seller: {item.seller}
+                        </p>
                       </div>
                     </div>
                   ))}
@@ -253,55 +297,57 @@ const Order = () => {
 
                 <div className="space-y-3 mb-6">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Subtotal</span>
-                    <span>
+                    <span style={{ color: theme.colors.text.secondary }}>Subtotal</span>
+                    <span style={{ color: theme.colors.text.primary }}>
                       ${order.items.reduce((total, item) => total + (item.price * item.quantity), 0).toFixed(2)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Delivery</span>
-                    <span>
+                    <span style={{ color: theme.colors.text.secondary }}>Delivery</span>
+                    <span style={{ color: theme.colors.text.primary }}>
                       {order.deliveryMethod?.price > 0 
                         ? `$${order.deliveryMethod.price.toFixed(2)}` 
                         : 'Free'}
                     </span>
                   </div>
                   <div className="flex justify-between font-semibold text-lg pt-3 border-t border-gray-200">
-                    <span>Total</span>
-                    <span className="text-green-600">${calculateTotal()}</span>
+                    <span style={{ color: theme.colors.text.primary }}>Total</span>
+                    <span style={{ color: theme.colors.accent }}>${calculateTotal()}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-green-50 p-4 rounded-lg mb-6">
-                <h3 className="font-medium text-base text-gray-900 mb-2">Customer Information</h3>
-                <p className="text-sm text-gray-600 mb-1">
+              <div className="p-4 rounded-lg mb-6" style={{ backgroundColor: theme.colors.secondary }}>
+                <h3 className="font-medium text-base mb-2" style={{ color: theme.colors.text.primary }}>
+                  Customer Information
+                </h3>
+                <p className="text-sm mb-1" style={{ color: theme.colors.text.secondary }}>
                   <span className="font-medium">Name:</span> {order.customerInfo.name || 'Your Name'}
                 </p>
-                <p className="text-sm text-gray-600 mb-1">
+                <p className="text-sm mb-1" style={{ color: theme.colors.text.secondary }}>
                   <span className="font-medium">Phone:</span> {order.customerInfo.phone || 'Your Phone'}
                 </p>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm" style={{ color: theme.colors.text.secondary }}>
                   <span className="font-medium">Address:</span> {order.customerInfo.address || 'Your Address'}
                 </p>
               </div>
 
               {order.deliveryMethod && (
-                <div className="bg-green-50 p-4 rounded-lg mb-6">
-                  <h3 className="font-medium text-base text-gray-900 mb-2">Delivery Information</h3>
-                  <p className="text-sm text-gray-600 mb-1">
+                <div className="p-4 rounded-lg mb-6" style={{ backgroundColor: theme.colors.secondary }}>
+                  <h3 className="font-medium text-base mb-2" style={{ color: theme.colors.text.primary }}>
+                    Delivery Information
+                  </h3>
+                  <p className="text-sm mb-1" style={{ color: theme.colors.text.secondary }}>
                     <span className="font-medium">Method:</span> {order.deliveryMethod.name}
                   </p>
-                  <p className="text-sm text-gray-600 mb-1">
+                  <p className="text-sm mb-1" style={{ color: theme.colors.text.secondary }}>
                     <span className="font-medium">Estimated Delivery:</span> {order.deliveryAgent.estimatedDelivery}
                   </p>
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm" style={{ color: theme.colors.text.secondary }}>
                     <span className="font-medium">Agent Contact:</span> {order.deliveryAgent.name} ({order.deliveryAgent.phone})
                   </p>
                 </div>
               )}
-
-            
             </div>
           </div>
         </div>
