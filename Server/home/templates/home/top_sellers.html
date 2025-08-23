@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Top Sellers</title>
+</head>
+<body>
+    <h1>Top 3 Sellers by Plants Sold</h1>
+    <ul>
+        {% for s in sellers %}
+            <li>
+                {{ s.1 }} - {{ s.2 }} | Total Plants Sold: {{ s.3 }}
+            </li>
+        {% empty %}
+            <li>No sellers found.</li>
+        {% endfor %}
+    </ul>
+</body>
+</html>
