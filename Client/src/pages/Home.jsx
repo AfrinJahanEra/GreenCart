@@ -155,7 +155,7 @@ const Home = () => {
       <section className="py-12 sm:py-16" style={{ backgroundColor: theme.colors.background.light }}>
         <div className="container mx-auto px-4 sm:px-5">
           <h2 className="text-2xl sm:text-3xl text-center mb-8 sm:mb-10" style={{ color: theme.colors.primary }}>
-            What Our Customers Say
+            What our customers say
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
             {testimonials.map(testimonial => (

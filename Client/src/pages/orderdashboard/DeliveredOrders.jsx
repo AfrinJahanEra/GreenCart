@@ -1,11 +1,12 @@
 // src/pages/orderdashboard/DeliveredOrders.jsx
 import { Link } from 'react-router-dom';
 import { theme } from '../../theme';
+import React, { useState } from 'react';
 
 const DeliveredOrders = () => {
   // Filter only delivered orders
-  const orders = [
-    {
+const [orders, setOrders] = useState([
+{
       id: 'GC-1001',
       status: 'Delivered',
       date: '2023-06-15',
@@ -20,9 +21,24 @@ const DeliveredOrders = () => {
       ],
       total: 54.95,
       deliveryMethod: 'Standard Delivery',
-      deliveredOn: 'June 17, 2023'
+      deliveredOn: 'June 17, 2023',
+      customerConfirmed: 1,
+      agentConfirmed: 1
     }
-  ];
+  ]);
+  const [showReviewForm, setShowReviewForm] = React.useState(null);
+  const [reviewData, setReviewData] = React.useState({ rating: 5, reviewText: '' });
+
+  const handleReviewSubmit = async (orderId, plantId) => {
+    try {
+      // Simulate API call to submit_order_review
+      console.log(`Submitting review for order ${orderId}, plant ${plantId}:`, reviewData);
+      setShowReviewForm(null);
+      setReviewData({ rating: 5, reviewText: '' });
+    } catch (error) {
+      console.error('Error submitting review:', error);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -57,7 +73,6 @@ const DeliveredOrders = () => {
               
               <div className="p-4">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Order Items */}
                   <div>
                     <h4 className="font-medium mb-3">Items</h4>
                     <div className="space-y-3">
@@ -78,25 +93,80 @@ const DeliveredOrders = () => {
                     </div>
                   </div>
                   
-                  {/* Delivery Information */}
                   <div>
                     <h4 className="font-medium mb-3">Delivery Information</h4>
                     <div className="space-y-2 text-sm">
                       <p><span className="text-gray-500">Method:</span> {order.deliveryMethod}</p>
                       <p><span className="text-gray-500">Delivered On:</span> {order.deliveredOn}</p>
+                      <p><span className="text-gray-500">Customer Confirmed:</span> {order.customerConfirmed ? 'Yes' : 'No'}</p>
+                      <p><span className="text-gray-500">Agent Confirmed:</span> {order.agentConfirmed ? 'Yes' : 'No'}</p>
                     </div>
                   </div>
                   
-                  {/* Order Actions */}
                   <div>
                     <h4 className="font-medium mb-3">Actions</h4>
                     <div className="space-y-2">
-                      <button className="w-full bg-[#224229] text-white px-4 py-2 rounded-lg hover:bg-[#4b6250] transition-colors text-sm">
-                        Leave Review
-                      </button>
-                      <button className="w-full bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors text-sm">
-                        Reorder
-                      </button>
+                      {order.customerConfirmed && order.agentConfirmed ? (
+                        <>
+                          {order.items.map(item => (
+                            <div key={item.id}>
+                              <button 
+                                onClick={() => setShowReviewForm(item.id)}
+                                className="w-full bg-[#224229] text-white px-4 py-2 rounded-lg hover:bg-[#4b6250] transition-colors text-sm"
+                              >
+                                Review {item.name}
+                              </button>
+                              {showReviewForm === item.id && (
+                                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                                  <h5 className="font-medium mb-2">Review {item.name}</h5>
+                                  <div className="space-y-2">
+                                    <div>
+                                      <label className="text-sm">Rating</label>
+                                      <select 
+                                        value={reviewData.rating}
+                                        onChange={(e) => setReviewData({ ...reviewData, rating: parseInt(e.target.value) })}
+                                        className="w-full p-2 border rounded"
+                                      >
+                                        {[1, 2, 3, 4, 5].map(rating => (
+                                          <option key={rating} value={rating}>{rating} Star{rating > 1 ? 's' : ''}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="text-sm">Review</label>
+                                      <textarea
+                                        value={reviewData.reviewText}
+                                        onChange={(e) => setReviewData({ ...reviewData, reviewText: e.target.value })}
+                                        className="w-full p-2 border rounded"
+                                        rows="4"
+                                      ></textarea>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => handleReviewSubmit(order.id, item.id)}
+                                        className="bg-[#224229] text-white px-4 py-2 rounded-lg hover:bg-[#4b6250]"
+                                      >
+                                        Submit Review
+                                      </button>
+                                      <button
+                                        onClick={() => setShowReviewForm(null)}
+                                        className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                          <button className="w-full bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors text-sm">
+                            Reorder
+                          </button>
+                        </>
+                      ) : (
+                        <p className="text-sm text-red-600">Cannot review: One or both confirmations pending</p>
+                      )}
                     </div>
                   </div>
                 </div>
