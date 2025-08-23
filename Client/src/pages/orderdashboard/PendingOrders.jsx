@@ -1,10 +1,10 @@
 // src/pages/orderdashboard/PendingOrders.jsx
 import { Link } from 'react-router-dom';
 import { theme } from '../../theme';
+import React, { useState } from 'react';
 
 const PendingOrders = () => {
-  // Filter only pending orders
-  const orders = [
+  const [orders, setOrders] = useState([
     {
       id: 'GC-1003',
       status: 'Processing',
@@ -19,9 +19,25 @@ const PendingOrders = () => {
         }
       ],
       total: 64.95,
-      deliveryMethod: 'Standard Delivery'
+      deliveryMethod: 'Standard Delivery',
+      estimatedDelivery: 'June 25, 2023',
+      customerConfirmed: 0,
+      agentConfirmed: 0
     }
-  ];
+  ]);
+
+  const confirmDelivery = async (orderId) => {
+    try {
+      // Simulate API call to confirm_customer_delivery
+      console.log(`Confirming delivery for order ${orderId}`);
+      // Update local state (in real app, fetch updated data from backend)
+      setOrders(orders.map(order => 
+        order.id === orderId ? { ...order, customerConfirmed: 1 } : order
+      ));
+    } catch (error) {
+      console.error('Error confirming delivery:', error);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -56,7 +72,6 @@ const PendingOrders = () => {
               
               <div className="p-4">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Order Items */}
                   <div>
                     <h4 className="font-medium mb-3">Items</h4>
                     <div className="space-y-3">
@@ -77,19 +92,27 @@ const PendingOrders = () => {
                     </div>
                   </div>
                   
-                  {/* Delivery Information */}
                   <div>
                     <h4 className="font-medium mb-3">Delivery Information</h4>
                     <div className="space-y-2 text-sm">
                       <p><span className="text-gray-500">Method:</span> {order.deliveryMethod}</p>
-                      <p><span className="text-gray-500">Est. Delivery:</span> June 25, 2023</p>
+                      <p><span className="text-gray-500">Est. Delivery:</span> {order.estimatedDelivery}</p>
+                      <p><span className="text-gray-500">Customer Confirmed:</span> {order.customerConfirmed ? 'Yes' : 'No'}</p>
+                      <p><span className="text-gray-500">Agent Confirmed:</span> {order.agentConfirmed ? 'Yes' : 'No'}</p>
                     </div>
                   </div>
                   
-                  {/* Order Actions */}
                   <div>
                     <h4 className="font-medium mb-3">Actions</h4>
                     <div className="space-y-2">
+                      {!order.customerConfirmed && (
+                        <button 
+                          onClick={() => confirmDelivery(order.id)}
+                          className="w-full bg-[#224229] text-white px-4 py-2 rounded-lg hover:bg-[#4b6250] transition-colors text-sm"
+                        >
+                          Confirm Delivery
+                        </button>
+                      )}
                       <button className="w-full bg-red-100 text-red-700 px-4 py-2 rounded-lg hover:bg-red-200 transition-colors text-sm">
                         Cancel Order
                       </button>
