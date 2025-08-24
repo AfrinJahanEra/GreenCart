@@ -78,6 +78,7 @@ CREATE TABLE users (
     is_active NUMBER(1) DEFAULT 1 NOT NULL
 ) TABLESPACE user_data;
 
+
 CREATE OR REPLACE TRIGGER trg_users_id
 BEFORE INSERT ON users
 FOR EACH ROW
@@ -276,6 +277,9 @@ CREATE TABLE orders (
     CONSTRAINT fk_orders_delivery_method FOREIGN KEY (delivery_method_id) REFERENCES delivery_methods(method_id)
 ) TABLESPACE order_data;
 
+select order_id from orders
+where user_id = 5;
+
 CREATE OR REPLACE TRIGGER trg_orders_id
 BEFORE INSERT ON orders
 FOR EACH ROW
@@ -426,7 +430,6 @@ CREATE TABLE carts (
     CONSTRAINT fk_cart_plant FOREIGN KEY (plant_id) REFERENCES plants(plant_id),
     CONSTRAINT fk_cart_size FOREIGN KEY (size_id) REFERENCES plant_sizes(size_id)
 ) TABLESPACE plant_data;
-
 
 CREATE OR REPLACE TRIGGER trg_cart_id
 BEFORE INSERT ON carts
@@ -765,9 +768,6 @@ END;
 
 
 
-
-
-
 -- plant collection page 
 
 -- Procedure for Category-wise Filter (fetch plants by category slug, using join)
@@ -832,6 +832,17 @@ END;
 /
 
 
+CREATE OR REPLACE PROCEDURE get_all_categories (
+    p_cursor OUT SYS_REFCURSOR
+) AS
+BEGIN
+    OPEN p_cursor FOR
+    SELECT category_id, name, slug
+    FROM plant_categories
+    ORDER BY name;
+END;
+/
+
 
 
 -- plant details page 
@@ -840,7 +851,6 @@ END;
 
 CREATE OR REPLACE PROCEDURE get_plant_details (
     p_plant_id IN NUMBER,
-    p_user_id IN NUMBER,  -- For checking favorite status
     p_cursor OUT SYS_REFCURSOR
 ) AS
 BEGIN
@@ -862,8 +872,6 @@ BEGIN
        FROM plant_care_tips pct WHERE pct.plant_id = p.plant_id) AS care_tips,
       AVG(r.rating) AS avg_rating,
       COUNT(r.review_id) AS review_count,
-      (SELECT CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END
-       FROM favorites f WHERE f.plant_id = p.plant_id AND f.user_id = p_user_id) AS is_favorite,
       JSON_ARRAYAGG(
           JSON_OBJECT(
               'review_id' VALUE r.review_id,
@@ -881,6 +889,8 @@ BEGIN
   GROUP BY p.plant_id, p.name, DBMS_LOB.SUBSTR(p.description, 4000, 1), p.base_price, p.stock_quantity, pi.image_url;
 END;
 /
+
+
 
 -- Procedure to add to cart
 CREATE OR REPLACE PROCEDURE add_to_cart (
@@ -1133,6 +1143,10 @@ EXCEPTION
 END;
 /
 
+
+
+
+
 -- User Profile sidebar
 
 
@@ -1290,7 +1304,6 @@ BEGIN
     UPDATE delivery_agents SET is_active = 0 WHERE user_id = p_user_id_to_delete;
 
     -- Clean up user interaction data
-    DELETE FROM favorites WHERE user_id = p_user_id_to_delete;
     DELETE FROM carts WHERE user_id = p_user_id_to_delete;
 
     -- Note: reviews.user_id is defined NOT NULL in schema — nulling it will fail.
@@ -2506,7 +2519,6 @@ END;
 
 SET SERVEROUTPUT ON;
 
-
 -- Insert into roles (fewer than 10 as logical roles)
 INSERT INTO roles (role_name, description) VALUES ('admin', 'Administrator');
 INSERT INTO roles (role_name, description) VALUES ('customer', 'Customer');
@@ -2595,7 +2607,9 @@ INSERT INTO plant_categories (name, slug) VALUES ('Cacti', 'cacti');
 
 
 
-SELECT user_id, username FROM users ORDER BY user_id;
+SELECT user_id, username FROM users;
+
+select * from plants;
 
 
 INSERT INTO plants (name, description, base_price, stock_quantity, seller_id)
