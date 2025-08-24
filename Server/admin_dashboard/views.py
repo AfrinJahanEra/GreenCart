@@ -4,7 +4,6 @@ from django.db import connection, DatabaseError
 import json
 from datetime import datetime
 
-# Apply discount
 @csrf_exempt
 def apply_discount_view(request):
     if request.method != "POST":
@@ -41,8 +40,6 @@ def apply_discount_view(request):
 
     return JsonResponse({"success": True})
 
-
-# Get order details with delivery info
 def order_details_view(request, order_id):
     with connection.cursor() as cursor:
         out_cursor = cursor.connection.cursor()

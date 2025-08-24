@@ -15,4 +15,5 @@ urlpatterns = [
     path('delivery_confirmation/', include('delivery_confirmation.urls')),
     path('delivery_agent/', include('delivery_agent.urls')),
     path('seller/', include('seller.urls')),
+    path('accounts/', include('accounts.urls')),
 ]
