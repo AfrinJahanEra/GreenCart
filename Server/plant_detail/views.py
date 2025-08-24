@@ -1,6 +1,6 @@
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.db import connection
+from django.db import connection, DatabaseError
 import json
 import oracledb
 
@@ -39,8 +39,6 @@ def plant_details(request, plant_id):
 
     return JsonResponse(plant_data)
 
-
-
 @csrf_exempt
 def add_to_cart_view(request):
     if request.method != "POST":
@@ -59,11 +57,6 @@ def add_to_cart_view(request):
             return JsonResponse({"error": str(e)}, status=400)
 
     return JsonResponse({"success": True})
-
-from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse
-import json
-from django.db import connection, DatabaseError
 
 @csrf_exempt
 def add_review_view(request, plant_id, user_id):

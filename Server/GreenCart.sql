@@ -1149,6 +1149,7 @@ END;
 
 -- User Profile sidebar
 
+select * from users;
 
 -- Procedure to fetch user profile details
 CREATE OR REPLACE PROCEDURE get_user_profile (
@@ -1864,42 +1865,45 @@ END;
 -- Admin dashboard procedures
 
 CREATE OR REPLACE PROCEDURE get_admin_dashboard_stats (
-    p_cursor OUT SYS_REFCURSOR
+    p_total_customers OUT NUMBER,
+    p_total_delivery_agents OUT NUMBER,
+    p_total_sellers OUT NUMBER,
+    p_total_revenue OUT NUMBER,
+    p_pending_orders OUT NUMBER,
+    p_low_stock_alerts OUT NUMBER
 ) AS
 BEGIN
-    OPEN p_cursor FOR
     SELECT 
         (SELECT COUNT(*) FROM users u 
          JOIN user_roles ur ON u.user_id = ur.user_id 
          JOIN roles r ON ur.role_id = r.role_id 
-         WHERE r.role_name = 'customer') AS total_customers,
-        (SELECT COUNT(*) FROM delivery_agents WHERE is_active = 1) AS total_delivery_agents,
+         WHERE r.role_name = 'customer'),
+        (SELECT COUNT(*) FROM delivery_agents WHERE is_active = 1),
         (SELECT COUNT(*) FROM users u 
          JOIN user_roles ur ON u.user_id = ur.user_id 
          JOIN roles r ON ur.role_id = r.role_id 
-         WHERE r.role_name = 'seller') AS total_sellers,
+         WHERE r.role_name = 'seller'),
         (SELECT NVL(SUM(total_amount), 0) FROM orders 
-         WHERE status_id IN (SELECT status_id FROM order_statuses WHERE status_name IN ('Delivered', 'Shipped'))) AS total_revenue,
+         WHERE status_id IN (SELECT status_id FROM order_statuses WHERE status_name IN ('Delivered', 'Shipped'))),
         (SELECT COUNT(*) FROM orders 
-         WHERE status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Processing')) AS pending_orders,
-        (SELECT COUNT(*) FROM low_stock_alerts WHERE is_resolved = 0) AS low_stock_alerts
+         WHERE status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Processing')),
+        (SELECT COUNT(*) FROM low_stock_alerts WHERE is_resolved = 0)
+    INTO p_total_customers, p_total_delivery_agents, p_total_sellers, 
+         p_total_revenue, p_pending_orders, p_low_stock_alerts
     FROM dual;
 END;
 /
 
 CREATE OR REPLACE PROCEDURE get_user_list (
     p_role_name IN VARCHAR2,
-    p_cursor OUT SYS_REFCURSOR
+    p_total_users OUT NUMBER,
+    p_avg_metric OUT NUMBER,
+    p_max_metric OUT NUMBER
 ) AS
 BEGIN
-    OPEN p_cursor FOR
     SELECT 
-        u.user_id,
-        u.first_name || ' ' || u.last_name AS name,
-        u.email,
-        u.phone,
-        u.created_at,
-        CASE 
+        COUNT(*),
+        AVG(CASE 
             WHEN p_role_name = 'customer' THEN
                 (SELECT COUNT(*) FROM orders o 
                  WHERE o.user_id = u.user_id 
@@ -1911,19 +1915,27 @@ BEGIN
                  AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'))
             WHEN p_role_name = 'seller' THEN
                 (SELECT COUNT(*) FROM plants p WHERE p.seller_id = u.user_id)
-        END AS count_metric,
-        CASE 
-            WHEN p_role_name = 'customer' THEN 'Total Delivered Orders'
-            WHEN p_role_name = 'delivery' THEN 'Total Completed Deliveries'
-            WHEN p_role_name = 'seller' THEN 'Total Plants Listed'
-        END AS metric_name
+        END),
+        MAX(CASE 
+            WHEN p_role_name = 'customer' THEN
+                (SELECT COUNT(*) FROM orders o 
+                 WHERE o.user_id = u.user_id 
+                 AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'))
+            WHEN p_role_name = 'delivery' THEN
+                (SELECT COUNT(*) FROM order_assignments oa 
+                 JOIN orders o ON oa.order_id = o.order_id 
+                 WHERE oa.agent_id = da.agent_id 
+                 AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'))
+            WHEN p_role_name = 'seller' THEN
+                (SELECT COUNT(*) FROM plants p WHERE p.seller_id = u.user_id)
+        END)
+    INTO p_total_users, p_avg_metric, p_max_metric
     FROM users u
     JOIN user_roles ur ON u.user_id = ur.user_id
     JOIN roles r ON ur.role_id = r.role_id
     LEFT JOIN delivery_agents da ON u.user_id = da.user_id AND p_role_name = 'delivery'
     WHERE r.role_name = p_role_name
-    AND u.is_active = 1
-    ORDER BY u.created_at DESC;
+    AND u.is_active = 1;
 END;
 /
 
@@ -2035,25 +2047,54 @@ CREATE OR REPLACE PROCEDURE get_activity_log (
     p_activity_type IN VARCHAR2 DEFAULT NULL,
     p_start_date IN TIMESTAMP DEFAULT NULL,
     p_end_date IN TIMESTAMP DEFAULT NULL,
-    p_cursor OUT SYS_REFCURSOR
+    p_total_activities OUT NUMBER,
+    p_unique_users OUT NUMBER,
+    p_most_common_type OUT VARCHAR2,
+    p_recent_activity_count OUT NUMBER
 ) AS
 BEGIN
-    OPEN p_cursor FOR
-    SELECT 
-        al.log_id,
-        al.activity_timestamp,
-        al.activity_type,
-        al.activity_details,
-        al.ip_address,
-        u.user_id,
-        u.username,
-        u.first_name || ' ' || u.last_name AS user_name
+    -- Get total activities
+    SELECT COUNT(*)
+    INTO p_total_activities
     FROM activity_log al
-    LEFT JOIN users u ON al.user_id = u.user_id
     WHERE (p_activity_type IS NULL OR al.activity_type = p_activity_type)
     AND (p_start_date IS NULL OR al.activity_timestamp >= p_start_date)
-    AND (p_end_date IS NULL OR al.activity_timestamp <= p_end_date)
-    ORDER BY al.activity_timestamp DESC;
+    AND (p_end_date IS NULL OR al.activity_timestamp <= p_end_date);
+
+    -- Get unique users
+    SELECT COUNT(DISTINCT user_id)
+    INTO p_unique_users
+    FROM activity_log al
+    WHERE (p_activity_type IS NULL OR al.activity_type = p_activity_type)
+    AND (p_start_date IS NULL OR al.activity_timestamp >= p_start_date)
+    AND (p_end_date IS NULL OR al.activity_timestamp <= p_end_date);
+
+    -- Get most common activity type
+    BEGIN
+        SELECT activity_type
+        INTO p_most_common_type
+        FROM (
+            SELECT activity_type, COUNT(*) as count
+            FROM activity_log
+            WHERE (p_activity_type IS NULL OR activity_type = p_activity_type)
+            AND (p_start_date IS NULL OR activity_timestamp >= p_start_date)
+            AND (p_end_date IS NULL OR activity_timestamp <= p_end_date)
+            GROUP BY activity_type
+            ORDER BY count DESC
+        ) WHERE ROWNUM = 1;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            p_most_common_type := 'N/A';
+    END;
+
+    -- Get recent activities (last 24 hours)
+    SELECT COUNT(*)
+    INTO p_recent_activity_count
+    FROM activity_log 
+    WHERE (p_activity_type IS NULL OR activity_type = p_activity_type)
+    AND (p_start_date IS NULL OR activity_timestamp >= p_start_date)
+    AND (p_end_date IS NULL OR activity_timestamp <= p_end_date)
+    AND activity_timestamp >= SYSTIMESTAMP - INTERVAL '24' HOUR;
 END;
 /
 
@@ -2061,26 +2102,49 @@ END;
 
 CREATE OR REPLACE PROCEDURE get_low_stock_alerts (
     p_resolved IN NUMBER DEFAULT NULL,
-    p_cursor OUT SYS_REFCURSOR
+    p_total_alerts OUT NUMBER,
+    p_unresolved_alerts OUT NUMBER,
+    p_avg_stock_level OUT NUMBER,
+    p_most_affected_seller OUT VARCHAR2
 ) AS
 BEGIN
-    OPEN p_cursor FOR
-    SELECT 
-        lsa.alert_id,
-        lsa.plant_id,
-        p.name AS plant_name,
-        lsa.current_stock,
-        lsa.threshold,
-        lsa.alert_date,
-        lsa.is_resolved,
-        lsa.resolved_date,
-        u.user_id AS seller_id,
-        u.first_name || ' ' || u.last_name AS seller_name
+    -- Get total alerts
+    SELECT COUNT(*)
+    INTO p_total_alerts
     FROM low_stock_alerts lsa
-    JOIN plants p ON lsa.plant_id = p.plant_id
-    JOIN users u ON p.seller_id = u.user_id
-    WHERE (p_resolved IS NULL OR lsa.is_resolved = p_resolved)
-    ORDER BY lsa.alert_date DESC;
+    WHERE (p_resolved IS NULL OR lsa.is_resolved = p_resolved);
+
+    -- Get unresolved alerts
+    SELECT COUNT(*)
+    INTO p_unresolved_alerts
+    FROM low_stock_alerts lsa
+    WHERE is_resolved = 0
+    AND (p_resolved IS NULL OR lsa.is_resolved = p_resolved);
+
+    -- Get average stock level for low stock alerts
+    SELECT AVG(lsa.current_stock)
+    INTO p_avg_stock_level
+    FROM low_stock_alerts lsa
+    WHERE (p_resolved IS NULL OR lsa.is_resolved = p_resolved);
+
+    -- Get seller with most low stock alerts
+    BEGIN
+        SELECT u.first_name || ' ' || u.last_name
+        INTO p_most_affected_seller
+        FROM (
+            SELECT p.seller_id, COUNT(*) as alert_count
+            FROM low_stock_alerts lsa
+            JOIN plants p ON lsa.plant_id = p.plant_id
+            WHERE (p_resolved IS NULL OR lsa.is_resolved = p_resolved)
+            GROUP BY p.seller_id
+            ORDER BY alert_count DESC
+        ) seller_alerts
+        JOIN users u ON seller_alerts.seller_id = u.user_id
+        WHERE ROWNUM = 1;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            p_most_affected_seller := 'None';
+    END;
 END;
 /
 
@@ -2089,53 +2153,55 @@ END;
 CREATE OR REPLACE PROCEDURE get_delivery_agent_orders (
     p_agent_id IN NUMBER,
     p_status_name IN VARCHAR2 DEFAULT NULL,
-    p_cursor OUT SYS_REFCURSOR
+    p_order_count OUT NUMBER,
+    p_total_amount OUT NUMBER,
+    p_avg_items OUT NUMBER
 ) AS
 BEGIN
-    OPEN p_cursor FOR
     SELECT 
-        o.order_id,
-        o.order_number,
-        TO_CHAR(o.order_date, 'YYYY-MM-DD HH24:MI:SS') AS order_date,
-        os.status_name AS order_status,
-        o.total_amount,
-        o.delivery_address,
-        u.first_name || ' ' || u.last_name AS customer_name,
-        u.phone AS customer_phone,
-        TO_CHAR(o.estimated_delivery_date, 'YYYY-MM-DD') AS estimated_delivery,
-        (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS item_count
+        COUNT(*),
+        NVL(SUM(o.total_amount), 0),
+        NVL(AVG((SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id)), 0)
+    INTO p_order_count, p_total_amount, p_avg_items
     FROM orders o
     JOIN order_statuses os ON o.status_id = os.status_id
     JOIN order_assignments oa ON o.order_id = oa.order_id
     JOIN users u ON o.user_id = u.user_id
     WHERE oa.agent_id = p_agent_id
-    AND (p_status_name IS NULL OR os.status_name = p_status_name)
-    ORDER BY o.order_date DESC;
+    AND (p_status_name IS NULL OR os.status_name = p_status_name);
 END;
 /
 
+
 CREATE OR REPLACE PROCEDURE get_delivery_agent_stats (
     p_agent_id IN NUMBER,
-    p_cursor OUT SYS_REFCURSOR
+    p_completed_deliveries OUT NUMBER,
+    p_pending_deliveries OUT NUMBER,
+    p_total_earnings OUT NUMBER
 ) AS
 BEGIN
-    OPEN p_cursor FOR
     SELECT 
         (SELECT COUNT(*) FROM order_assignments oa 
          JOIN orders o ON oa.order_id = o.order_id 
          WHERE oa.agent_id = p_agent_id 
-         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) AS completed_deliveries,
+         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')),
+
         (SELECT COUNT(*) FROM order_assignments oa 
          JOIN orders o ON oa.order_id = o.order_id 
          WHERE oa.agent_id = p_agent_id 
-         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name IN ('Processing', 'Shipped'))) AS pending_deliveries,
+         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name IN ('Processing', 'Shipped'))),
+
         (SELECT COUNT(*) FROM order_assignments oa 
          JOIN orders o ON oa.order_id = o.order_id 
          WHERE oa.agent_id = p_agent_id 
-         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) * 134 AS total_earnings
+         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) * 134
+    INTO p_completed_deliveries, p_pending_deliveries, p_total_earnings
     FROM dual;
 END;
 /
+
+
+
 
 -- Seller procedures
 
@@ -2477,9 +2543,98 @@ END;
 /
 
 
+-- sign up page
+
+create or replace procedure signup_user(
+    p_username in users.username%type,
+    p_email in users.email%type,
+    p_password in users.password_hash%type,
+    p_firstname in users.first_name%type,
+    p_lastname in users.last_name%type,
+    p_phone in users.phone%type,
+    p_address in users.address%type
+) is
+begin
+    insert into users(username, email, password_hash, first_name, last_name, phone, address)
+    values (p_username, p_email, p_password, p_firstname, p_lastname, p_phone, p_address);
+
+    dbms_output.put_line('Signup successful for user: ' || p_username);
+exception
+    when dup_val_on_index then
+        dbms_output.put_line('Error: Username or Email already exists.');
+    when others then
+        dbms_output.put_line('Signup failed: ' || sqlerrm);
+end;
+/
+
+SET SERVEROUTPUT ON;
+
+BEGIN
+    signup_user(
+        p_username  => 'newuser1',
+        p_email     => 'newuser1@example.com',
+        p_password  => 'hash123',
+        p_firstname => 'New',
+        p_lastname  => 'User',
+        p_phone     => '0123456789',
+        p_address   => '123 New Street'
+    );
+END;
+/
 
 
 
+set serveroutput on;
+-- login page
+select * from users;
+SET SERVEROUTPUT ON;
+
+-- Make sure server output is on to see DBMS_OUTPUT
+SET SERVEROUTPUT ON;
+
+
+
+
+select * from users where username = 'newuser1';
+
+ALTER PROCEDURE login_user COMPILE;
+
+CREATE OR REPLACE PROCEDURE test_login_user(
+    p_username in users.username%type,
+    p_password in users.password_hash%type
+) IS
+    v_count NUMBER;
+BEGIN
+    
+    SELECT COUNT(*) INTO v_count
+    FROM users
+    WHERE username = p_username AND password_hash = p_password;
+    
+    IF v_count > 0 THEN
+        DBMS_OUTPUT.PUT_LINE('Login successful for: ' || p_username);
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('Invalid username/email or password.');
+    END IF;
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Login failed: ' || SQLERRM);
+END;
+/
+
+
+
+set serveroutput on;
+EXEC test_login_user('newuser1', 'hash123');
+
+
+SELECT object_name, status FROM user_objects WHERE object_name = 'LOGIN_USER';
+commit;
+
+
+
+
+
+select * from users;
 
 
 
