@@ -24,6 +24,16 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'home',
+    'plant_collection',
+    'plant_detail',
+    'user_profile_sidebar',
+    'cart_sidebar',
+    'order',
+    'admin_dashboard',
+    'delivery_confirmation',
+    'greencart_admin',
+    'delivery_agent',
+    'seller',
 ]
 
 MIDDLEWARE = [
