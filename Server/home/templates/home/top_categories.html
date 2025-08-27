@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Top Categories</title>
+</head>
+<body>
+    <h1>Top 4 Plant Categories</h1>
+    <ul>
+        {% for c in categories %}
+            <li>
+                <strong>{{ c.1 }}</strong> (Slug: {{ c.2 }}) - Plants: {{ c.3 }}
+            </li>
+        {% empty %}
+            <li>No categories found.</li>
+        {% endfor %}
+    </ul>
+</body>
+</html>
