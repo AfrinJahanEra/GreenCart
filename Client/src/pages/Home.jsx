@@ -5,98 +5,74 @@ import Button from '../components/Button';
 import Hero from '../components/Hero';
 import { theme } from '../theme';
 import { Link } from 'react-router-dom';
+import { useTopCategories, useTopPlants, useTopSellers } from '../hooks/useHomeData';
+import LoadingSpinner from '../components/LoadingSpinner';
+
+// Default images (fallback if API doesn't provide images)
 import lowLightImg from '../assets/ardella.jpeg';
 import petFriendlyImg from '../assets/margent.jpeg';
 import airPurifyingImg from '../assets/snake.jpeg';
 import beginnerFriendlyImg from '../assets/Blosom.jpeg';
 
+const defaultImages = {
+  'low-light': lowLightImg,
+  'pet-friendly': petFriendlyImg,
+  'air-purifying': airPurifyingImg,
+  'beginner-friendly': beginnerFriendlyImg
+};
+
 const Home = () => {
-  const popularPlants = [
-    {
-      id: 1,
-      name: 'Monstera Deliciosa',
-      price: 45,
-      ratingStars: '★★★★★',
-      reviewCount: 520,
-      image: airPurifyingImg
-    },
-    {
-      id: 2,
-      name: 'Snake Plant',
-      price: 35,
-      ratingStars: '★★★★☆',
-      reviewCount: 428,
-      image: lowLightImg
-    },
-    {
-      id: 3,
-      name: 'Fiddle Leaf Fig',
-      price: 55,
-      ratingStars: '★★★★★',
-      reviewCount: 312,
-      image: petFriendlyImg
-    },
-    {
-      id: 4,
-      name: 'Peace Lily',
-      price: 25,
-      ratingStars: '★★★★★',
-      reviewCount: 210,
-      image: beginnerFriendlyImg
-    }
-  ];
+  const { categories: apiCategories, loading: categoriesLoading, error: categoriesError } = useTopCategories();
+  const { plants: apiPlants, loading: plantsLoading, error: plantsError } = useTopPlants();
+  const { sellers: apiSellers, loading: sellersLoading, error: sellersError } = useTopSellers();
 
-  const categories = [
-    {
-      id: 1,
-      name: 'Low Light Plants',
-      description: 'Thrives in low light conditions',
-      image: lowLightImg,
-      slug: 'low-light'
-    },
-    {
-      id: 2,
-      name: 'Pet Friendly',
-      description: 'Safe for your furry friends',
-      image: petFriendlyImg,
-      slug: 'pet-friendly'
-    },
-    {
-      id: 3,
-      name: 'Air Purifying',
-      description: 'Cleans the air naturally',
-      image: airPurifyingImg,
-      slug: 'air-purifying'
-    },
-    {
-      id: 4,
-      name: 'Beginner Friendly',
-      description: 'Easy to care for',
-      image: beginnerFriendlyImg,
-      slug: 'beginner-friendly'
-    }
-  ];
+  // Transform API categories data to match frontend structure
+  const categories = apiCategories.map(category => ({
+    id: category.category_id,
+    name: category.name,
+    description: `${category.plant_count} plants available`,
+    image: defaultImages[category.slug] || lowLightImg, // Fallback image
+    slug: category.slug
+  }));
 
-  const testimonials = [
-    {
-      id: 1,
-      name: 'Sarah Johnson',
-      quote: 'My plants arrived in perfect condition and have been thriving ever since!',
-      image: 'https://randomuser.me/api/portraits/women/44.jpg'
-    },
-    {
-      id: 2,
-      name: 'Michael Chen',
-      quote: 'Excellent customer service and beautiful, healthy plants.',
-      image: 'https://randomuser.me/api/portraits/men/32.jpg'
-    },
-    {
-      id: 3,
-      name: 'Priya Patel',
-      quote: 'The perfect gift for my plant-loving friend!',
-      image: 'https://randomuser.me/api/portraits/women/68.jpg'
-    }
-  ];
+  // Transform API plants data to match frontend structure
+  const popularPlants = apiPlants.map(plant => ({
+    id: plant.plant_id,
+    name: plant.name,
+    price: plant.price,
+    ratingStars: '★★★★★', // You might need to calculate this from ratings data
+    reviewCount: plant.review_count || 0,
+    image: plant.image_url || airPurifyingImg // Fallback image
+  }));
+
+  // Transform API sellers data to testimonials
+  const testimonials = apiSellers.map(seller => ({
+    id: seller.seller_id,
+    name: seller.seller_name,
+    quote: seller.testimonial || `Top-rated seller with ${seller.plant_count} plants`,
+    image: seller.image_url || 'https://randomuser.me/api/portraits/lego/1.jpg'
+  }));
+
+  if (categoriesLoading || plantsLoading || sellersLoading) {
+    return (
+      <div className="bg-white min-h-screen flex items-center justify-center">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (categoriesError || plantsError || sellersError) {
+    return (
+      <div className="bg-white">
+        <Header />
+        <div className="container mx-auto px-4 py-16 text-center">
+          <h2 className="text-2xl text-red-600 mb-4">Error Loading Data</h2>
+          <p>Please try refreshing the page.</p>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white">

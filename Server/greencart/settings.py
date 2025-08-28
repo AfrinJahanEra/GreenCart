@@ -2,17 +2,23 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 import cloudinary
+import oracledb
+
+try:
+    oracledb.init_oracle_client()
+except:
+    pass
 
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-load_dotenv(dotenv_path=BASE_DIR / '.env')
 SECRET_KEY = os.getenv('SECRET_KEY')
 
 DEBUG = True
 
 ALLOWED_HOSTS = ['*']
+
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -21,8 +27,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
     'home',
-    'plant_collection',
+        'plant_collection',
     'plant_detail',
     'user_profile_sidebar',
     'cart_sidebar',
@@ -36,6 +43,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -64,21 +72,13 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'greencart.wsgi.application'
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend' 
-EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
-EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
-EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', 'afrinjahanera03@gmail.com')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
-DEFAULT_FROM_EMAIL = os.getenv('EMAIL_HOST_USER', 'afrinjahanera03@gmail.com')
-OTP_VALIDITY_MINUTES = int(os.getenv('OTP_VALIDITY_MINUTES', 2))
 
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.oracle',
-        'NAME': 'orcl2',
-        'USER': 'C##dbms',
-        'PASSWORD': 'dbms',
+        'NAME': 'xe', 
+        'USER': 'system',  
+        'PASSWORD': '123',  
         'HOST': 'localhost',
         'PORT': '1521',
     }
@@ -106,14 +106,16 @@ cloudinary.config(
     secure=True
 )
 
+# CORS settings
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
 
 STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
