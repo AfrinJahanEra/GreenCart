@@ -1,202 +1,184 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import CartSidebar from './CartSidebar';
 import ProfileSidebar from './ProfileSidebar';
+import SearchBar from './SearchBar';
 import { theme } from '../theme';
 
 const Header = () => {
+  const { user, loading } = useAuth();
   const [showCart, setShowCart] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [showResults, setShowResults] = useState(false);
-  const searchRef = useRef(null);
   const navigate = useNavigate();
 
-  const [orders, setOrders] = useState([
-    { id: 'GC-1001', status: 'Delivered' },
-    { id: 'GC-1002', status: 'Shipped' },
-  ]);
-
-  const allPlants = [
-    { id: 1, name: 'Snake Plant', slug: 'snake-plant', image: 'https://images.unsplash.com/photo-1586220742613-b731f66f7743?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80' },
-    { id: 2, name: 'Fiddle Leaf Fig', slug: 'fiddle-leaf-fig', image: 'https://images.unsplash.com/photo-1534710961216-75c88202f43e?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80' },
-    { id: 3, name: 'Monstera Deliciosa', slug: 'monstera-deliciosa', image: 'https://images.unsplash.com/photo-1525947088131-b701cd0f6dc3?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80' },
-    { id: 4, name: 'Spider Plant', slug: 'spider-plant', image: 'https://images.unsplash.com/photo-1598880940080-ff9a29891b80?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80' },
-    { id: 5, name: 'ZZ Plant', slug: 'zz-plant', image: 'https://images.unsplash.com/photo-1598880940080-ff9a29891b80?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80' },
-    { id: 6, name: 'Peace Lily', slug: 'peace-lily', image: 'https://images.unsplash.com/photo-1598880940080-ff9a29891b80?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80' },
-  ];
+  // Placeholder for orders count (replace with actual API call later)
+  const [orders, setOrders] = useState([]);
 
   useEffect(() => {
-    if (searchQuery.trim() === '') {
-      setSearchResults([]);
-      return;
+    // Fetch orders for customer role (mock for now)
+    if (user && user.role === 'customer') {
+      setOrders([
+        { id: 'GC-1001', status: 'Delivered' },
+        { id: 'GC-1002', status: 'Shipped' },
+      ]);
     }
+  }, [user]);
 
-    const results = allPlants
-      .filter(plant => plant.name.toLowerCase().includes(searchQuery.toLowerCase()))
-      .slice(0, 5);
+  // Cart items count (mock for now)
+  const cartItemsCount = 2;
 
-    setSearchResults(results);
-  }, [searchQuery]);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (searchRef.current && !searchRef.current.contains(event.target)) {
-        setShowResults(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-
-  const handleSearchSubmit = (e) => {
-    e.preventDefault();
-    if (searchQuery.trim() && searchResults.length > 0) {
-      navigate(`/plant/${searchResults[0].id}`);
-      setSearchQuery('');
-      setSearchResults([]);
+  // Define dashboard link based on role
+  const getDashboardLink = () => {
+    switch (user?.role) {
+      case 'seller':
+        return '/seller/dashboard';
+      case 'delivery_agent':
+        return '/delivery/assigned';
+      case 'admin':
+        return '/admin/dashboard';
+      default:
+        return '/';
     }
-  };
-
-  const handleResultClick = (plantId) => {
-    navigate(`/plant/${plantId}`);
-    setSearchQuery('');
-    setSearchResults([]);
-    setShowResults(false);
   };
 
   return (
     <>
       <header className="bg-white shadow-sm sticky top-0 z-40">
         <div className="container mx-auto px-4 py-3">
-          {/* Top Row - Logo and Icons */}
           <div className="flex items-center justify-between gap-4">
             {/* Logo */}
             <Link to="/" className="text-xl sm:text-2xl font-bold" style={{ color: theme.colors.primary }}>
               GreenCart
             </Link>
 
-            {/* Icons - Visible on all screens */}
-            <div className="flex items-center gap-2 sm:gap-3">
-              <button
-                onClick={() => setShowProfile(true)}
-                className="p-1 sm:p-2 rounded-full hover:bg-gray-100 transition-colors"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 sm:h-6 sm:w-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                  />
-                </svg>
-              </button>
-              <button
-                onClick={() => setShowCart(true)}
-                className="p-1 sm:p-2 rounded-full hover:bg-gray-100 transition-colors relative"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 sm:h-6 sm:w-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"
-                  />
-                </svg>
-                <span className="absolute -top-1 -right-1 bg-green-600 text-white text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center">
-                  {allPlants.length}
-                </span>
-              </button>
-              <button
-                onClick={() => navigate('/orders')}
-                className="p-1 sm:p-2 rounded-full hover:bg-gray-100 transition-colors relative"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 sm:h-6 sm:w-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                  />
-                </svg>
-                <span className="absolute -top-1 -right-1 bg-green-600 text-white text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center">
-                  {orders.length}
-                </span>
-              </button>
-            </div>
-          </div>
-
-          {/* Search Bar - Below on small screens */}
-          <div className="mt-3 md:mt-0 md:max-w-xl md:mx-auto relative" ref={searchRef}>
-            <form onSubmit={handleSearchSubmit}>
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Search plants..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm sm:text-base"
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setShowResults(true);
-                  }}
-                  onFocus={() => setShowResults(true)}
-                />
-                <button
-                  type="submit"
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-                  </svg>
-                </button>
-              </div>
-
-              {showResults && searchResults.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200">
-                  {searchResults.map(plant => (
-                    <div
-                      key={plant.id}
-                      className="p-2 sm:p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 flex items-center gap-2 sm:gap-3"
-                      onClick={() => handleResultClick(plant.id)}
+            {loading ? (
+              <div>Loading...</div>
+            ) : user ? (
+              // Header content based on role
+              user.role === 'customer' ? (
+                <>
+                  {/* Customer Header: Full functionality */}
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <button
+                      onClick={() => setShowProfile(true)}
+                      className="p-1 sm:p-2 rounded-full hover:bg-gray-100 transition-colors"
+                      aria-label="Profile"
                     >
-                      <img src={plant.image} alt={plant.name} className="w-8 h-8 sm:w-10 sm:h-10 object-cover rounded" />
-                      <div>
-                        <p className="font-medium text-sm sm:text-base" style={{ color: theme.colors.primary }}>{plant.name}</p>
-                        <p className="text-xs text-gray-500">View details</p>
-                      </div>
-                    </div>
-                  ))}
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-5 w-5 sm:h-6 sm:w-6"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => setShowCart(true)}
+                      className="p-1 sm:p-2 rounded-full hover:bg-gray-100 transition-colors relative"
+                      aria-label="Shopping cart"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-5 w-5 sm:h-6 sm:w-6"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"
+                        />
+                      </svg>
+                      <span className="absolute -top-1 -right-1 bg-green-600 text-white text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center">
+                        {cartItemsCount}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => navigate('/orders')}
+                      className="p-1 sm:p-2 rounded-full hover:bg-gray-100 transition-colors relative"
+                      aria-label="Orders"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-5 w-5 sm:h-6 sm:w-6"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                        />
+                      </svg>
+                      <span className="absolute -top-1 -right-1 bg-green-600 text-white text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center">
+                        {orders.length}
+                      </span>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Non-Customer Header: Dashboard Link Only */}
+                  <Link
+                    to={getDashboardLink()}
+                    className="text-sm sm:text-base font-medium hover:text-green-600"
+                    style={{ color: theme.colors.accent }}
+                  >
+                    Go to {user.role.charAt(0).toUpperCase() + user.role.slice(1)} Dashboard
+                  </Link>
+                </>
+              )
+            ) : (
+              <>
+                {/* Non-Logged-In Header: Login/Signup Links */}
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <Link
+                    to="/login"
+                    className="text-sm sm:text-base font-medium hover:text-green-600"
+                    style={{ color: theme.colors.accent }}
+                  >
+                    Login
+                  </Link>
+                  <Link
+                    to="/signup"
+                    className="text-sm sm:text-base font-medium hover:text-green-600"
+                    style={{ color: theme.colors.accent }}
+                  >
+                    Signup
+                  </Link>
                 </div>
-              )}
-            </form>
+              </>
+            )}
           </div>
+
+          {/* Search Bar - Only for customers or non-logged-in users */}
+          {(!user || user.role === 'customer') && (
+            <div className="mt-3 md:mt-0 md:max-w-xl md:mx-auto">
+              <SearchBar />
+            </div>
+          )}
         </div>
       </header>
 
-      <CartSidebar showCart={showCart} setShowCart={setShowCart} />
-      <ProfileSidebar showProfile={showProfile} setShowProfile={setShowProfile} />
+      {/* Sidebars - Only for customers */}
+      {user && user.role === 'customer' && (
+        <>
+          <CartSidebar showCart={showCart} setShowCart={setShowCart} />
+          <ProfileSidebar showProfile={showProfile} setShowProfile={setShowProfile} />
+        </>
+      )}
     </>
   );
 };

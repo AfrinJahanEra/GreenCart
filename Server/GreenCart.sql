@@ -2545,26 +2545,60 @@ END;
 
 -- sign up page
 
-create or replace procedure signup_user(
-    p_username in users.username%type,
-    p_email in users.email%type,
-    p_password in users.password_hash%type,
-    p_firstname in users.first_name%type,
-    p_lastname in users.last_name%type,
-    p_phone in users.phone%type,
-    p_address in users.address%type
-) is
-begin
-    insert into users(username, email, password_hash, first_name, last_name, phone, address)
-    values (p_username, p_email, p_password, p_firstname, p_lastname, p_phone, p_address);
-
-    dbms_output.put_line('Signup successful for user: ' || p_username);
-exception
-    when dup_val_on_index then
-        dbms_output.put_line('Error: Username or Email already exists.');
-    when others then
-        dbms_output.put_line('Signup failed: ' || sqlerrm);
-end;
+CREATE OR REPLACE PROCEDURE signup_user(
+    p_username IN users.username%TYPE,
+    p_email IN users.email%TYPE,
+    p_password IN users.password_hash%TYPE,
+    p_firstname IN users.first_name%TYPE,
+    p_lastname IN users.last_name%TYPE,
+    p_phone IN users.phone%TYPE,
+    p_address IN users.address%TYPE,
+    p_role_name IN roles.role_name%TYPE
+) IS
+    v_user_id NUMBER;
+    v_role_id NUMBER;
+    v_role_count NUMBER;
+BEGIN
+    -- Validate role exists
+    SELECT COUNT(*) INTO v_role_count
+    FROM roles
+    WHERE role_name = p_role_name;
+    
+    IF v_role_count = 0 THEN
+        RAISE_APPLICATION_ERROR(-20050, 'Invalid role name: ' || p_role_name);
+    END IF;
+    
+    -- Insert user
+    INSERT INTO users(username, email, password_hash, first_name, last_name, phone, address)
+    VALUES (p_username, p_email, p_password, p_firstname, p_lastname, p_phone, p_address)
+    RETURNING user_id INTO v_user_id;
+    
+    -- Get role_id
+    SELECT role_id INTO v_role_id
+    FROM roles
+    WHERE role_name = p_role_name;
+    
+    -- Assign role to user
+    INSERT INTO user_roles(user_id, role_id, assigned_at)
+    VALUES (v_user_id, v_role_id, SYSTIMESTAMP);
+    
+    -- If role is delivery_agent, create delivery agent record
+    IF p_role_name = 'delivery_agent' THEN
+        INSERT INTO delivery_agents(user_id, vehicle_type, license_number, is_active)
+        VALUES (v_user_id, 'Default', NULL, 1);
+    END IF;
+    
+    DBMS_OUTPUT.PUT_LINE('Signup successful for user: ' || p_username || ' with role: ' || p_role_name);
+    
+    COMMIT;
+EXCEPTION
+    WHEN DUP_VAL_ON_INDEX THEN
+        ROLLBACK;
+        DBMS_OUTPUT.PUT_LINE('Error: Username or Email already exists.');
+    WHEN OTHERS THEN
+        ROLLBACK;
+        DBMS_OUTPUT.PUT_LINE('Signup failed: ' || SQLERRM);
+END;
 /
 
 SET SERVEROUTPUT ON;
@@ -3245,7 +3279,7 @@ WHERE o.order_number = 'ORD10';
 --SELECT u.user_id, p.plant_id FROM users u JOIN plants p ON p.name = 'Plant9' WHERE u.username = 'cust3';
 --INSERT INTO favorites (user_id, plant_id)
 --SELECT u.user_id, p.plant_id FROM users u JOIN plants p ON p.name = 'Plant10' WHERE u.username = 'cust1';
-
+select * from users;
 
 INSERT INTO reviews (user_id, plant_id, rating, review_text)
 SELECT u.user_id, p.plant_id, 5, 'Great!' FROM users u JOIN plants p ON p.name='Plant1' WHERE u.username='cust1';

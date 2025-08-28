@@ -3,6 +3,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.db import connection, DatabaseError
 import json
 import hashlib
+from datetime import datetime
 
 
 @csrf_exempt
@@ -12,10 +13,18 @@ def signup(request):
 
     try:
         data = json.loads(request.body)
+        
+        # Validate required fields
+        required_fields = ["username", "email", "password", "first_name", "last_name", "role_name"]
+        for field in required_fields:
+            if field not in data or not data[field]:
+                return JsonResponse({"error": f"{field} is required"}, status=400)
+
+        # Hash the password using SHA256
+        password = data.get("password")
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
 
         with connection.cursor() as cursor:
-            password = data.get("password")
-            password_hash = hashlib.sha256(password.encode()).hexdigest() if password else None
             cursor.callproc("signup_user", [
                 data.get("username"),
                 data.get("email"),
@@ -23,13 +32,16 @@ def signup(request):
                 data.get("first_name"),
                 data.get("last_name"),
                 data.get("phone"),
-                data.get("address")
+                data.get("address"),
+                data.get("role_name")  # New role_name parameter
             ])
 
         return JsonResponse({"message": "Signup successful"}, status=201)
 
     except DatabaseError as e:
         return JsonResponse({"error": str(e)}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": "Signup failed: " + str(e)}, status=500)
 
 
 @csrf_exempt
@@ -41,27 +53,42 @@ def login(request):
         data = json.loads(request.body)
         username = data.get("username")
         password = data.get("password")
+        
+        if not username or not password:
+            return JsonResponse({"error": "Username and password are required"}, status=400)
+
+        # Hash the password using SHA256
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
 
         with connection.cursor() as cursor:
-            cursor.callproc("test_login_user", [username, password])
+            # Fetch user details and role from user_roles and roles tables
             cursor.execute("""
-                SELECT user_id, username, email
-                FROM users
-                WHERE username = :u AND password_hash = :p
-            """, {"u": username, "p": password})
+                SELECT u.user_id, u.username, u.email, r.role_name
+                FROM users u
+                LEFT JOIN user_roles ur ON u.user_id = ur.user_id
+                LEFT JOIN roles r ON ur.role_id = r.role_id
+                WHERE u.username = %s AND u.password_hash = %s AND u.is_active = 1
+            """, [username, password_hash])
             user = cursor.fetchone()
 
         if user:
+            # Generate a token
+            token = hashlib.sha256(f"{username}{datetime.now()}".encode()).hexdigest()
+            
             return JsonResponse({
                 "message": "Login successful",
+                "token": token,
                 "user": {
                     "id": user[0],
                     "username": user[1],
-                    "email": user[2]
+                    "email": user[2],
+                    "role": user[3] or "customer" 
                 }
-            })
+            }, status=200)
         else:
             return JsonResponse({"error": "Invalid username or password"}, status=401)
 
     except DatabaseError as e:
         return JsonResponse({"error": str(e)}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": "Login failed: " + str(e)}, status=500)

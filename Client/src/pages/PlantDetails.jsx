@@ -4,10 +4,8 @@ import Header from '../components/Header';
 import Footer from '../components/Footer';
 import Button from '../components/Button';
 import { theme } from '../theme';
-import lowLightImg from '../assets/ardella.jpeg';
-import petFriendlyImg from '../assets/margent.jpeg';
-import airPurifyingImg from '../assets/snake.jpeg';
-import beginnerFriendlyImg from '../assets/Blosom.jpeg';
+import { usePlantDetail, usePlantReviews } from '../hooks/usePlantDetail';
+import { addReview, deleteReview } from '../services/api';
 
 const PlantDetails = () => {
   const { id } = useParams();
@@ -15,67 +13,76 @@ const PlantDetails = () => {
   const [quantity, setQuantity] = useState(1);
   const [isFavorite, setIsFavorite] = useState(false);
   const [startImageIndex, setStartImageIndex] = useState(0);
+  const [newReview, setNewReview] = useState({ rating: 5, text: '' });
+  const [showReviewForm, setShowReviewForm] = useState(false);
+
+  const { plant, loading: plantLoading, error: plantError } = usePlantDetail(id);
+  const { reviews, loading: reviewsLoading, error: reviewsError, setReviews } = usePlantReviews(id);
 
   const toggleFavorite = () => {
     setIsFavorite(!isFavorite);
     // Update global favorites state here
   };
 
-  const plant = {
-    id: 1,
-    name: 'Monstera Deliciosa',
-    price: 45,
-    ratingStars: '★★★★★',
-    reviewCount: 520,
-    description: 'The Monstera Deliciosa, also known as the Swiss Cheese Plant, is famous for its large, glossy leaves with natural holes. This tropical beauty is perfect for adding a lush, jungle-like feel to your space.',
-    images: [
-      'https://images.unsplash.com/photo-1525947088131-b701cd0f6dc3?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-      lowLightImg,
-      petFriendlyImg,
-      airPurifyingImg,
-      beginnerFriendlyImg
-    ],
-    sizes: [
-      { name: 'Small (4-6")', price: 35 },
-      { name: 'Medium (6-8")', price: 45 },
-      { name: 'Large (8-10")', price: 55 }
-    ],
-    features: [
-      'Pet-friendly and non-toxic',
-      'Low maintenance and easy to care for',
-      'Helps purify indoor air',
-      'Comes with care guide'
-    ],
-    careTips: [
-      'Light: Bright, indirect sunlight',
-      'Water: Once a week, allow soil to dry between waterings',
-      'Humidity: Prefers higher humidity',
-      'Temperature: 65-85°F (18-29°C)'
-    ],
-    reviews: [
-      {
-        id: 1,
-        text: 'Absolutely love my Monstera! It arrived in perfect condition and has grown two new leaves already.',
-        author: 'Emma R.',
-        rating: 5,
-        date: '2 weeks ago'
-      },
-      {
-        id: 2,
-        text: 'Beautiful plant, much bigger than I expected. Very happy with my purchase!',
-        author: 'David L.',
-        rating: 5,
-        date: '1 month ago'
+  const handleAddReview = async (e) => {
+    e.preventDefault();
+    try {
+      // Get current user ID from your authentication context
+      const userId = localStorage.getItem('userId'); // Adjust based on your auth implementation
+      
+      const response = await addReview(id, userId, {
+        rating: newReview.rating,
+        review_text: newReview.text
+      });
+      
+      if (response.success) {
+        // Refresh reviews
+        const updatedReviews = [...reviews, {
+          id: Date.now(), // Temporary ID until we fetch from server
+          user_id: userId,
+          reviewer_name: 'You', // This should come from user profile
+          rating: newReview.rating,
+          review_text: newReview.text,
+          review_date: 'Just now',
+          is_approved: false
+        }];
+        
+        setReviews(updatedReviews);
+        setNewReview({ rating: 5, text: '' });
+        setShowReviewForm(false);
       }
-    ]
+    } catch (error) {
+      console.error('Error adding review:', error);
+      alert('Failed to add review. Please try again.');
+    }
+  };
+
+  const handleDeleteReview = async (reviewId) => {
+    try {
+      // Get current user ID from your authentication context
+      const userId = localStorage.getItem('userId'); // Adjust based on your auth implementation
+      
+      const response = await deleteReview(userId, reviewId);
+      
+      if (response.success) {
+        // Remove the review from local state
+        const updatedReviews = reviews.filter(review => review.review_id !== reviewId);
+        setReviews(updatedReviews);
+      }
+    } catch (error) {
+      console.error('Error deleting review:', error);
+      alert('Failed to delete review. Please try again.');
+    }
   };
 
   const addToCart = () => {
+    if (!plant) return;
+    
     const item = {
-      id: plant.id,
+      id: plant.plant_id,
       name: plant.name,
       price: plant.sizes[selectedSize].price,
-      image: plant.images[0],
+      image: plant.primary_image,
       size: plant.sizes[selectedSize].name,
       quantity: quantity
     };
@@ -90,17 +97,64 @@ const PlantDetails = () => {
   };
 
   const nextImages = () => {
+    if (!plant) return;
+    
     setStartImageIndex((prevIndex) => {
       const visibleImages = getVisibleImages();
-      return prevIndex + 1 >= plant.images.length - Math.floor(visibleImages) ? 0 : prevIndex + 1;
+      return prevIndex + 1 >= plant.image_urls.length - Math.floor(visibleImages) ? 0 : prevIndex + 1;
     });
   };
 
   const prevImages = () => {
+    if (!plant) return;
+    
     setStartImageIndex((prevIndex) => 
-      prevIndex - 1 < 0 ? Math.max(0, plant.images.length - Math.ceil(getVisibleImages())) : prevIndex - 1
+      prevIndex - 1 < 0 ? Math.max(0, plant.image_urls.length - Math.ceil(getVisibleImages())) : prevIndex - 1
     );
   };
+
+  // Format sizes from API response
+  const formatSizes = () => {
+    if (!plant || !plant.sizes) return [];
+    
+    return Object.entries(plant.sizes).map(([name, price]) => ({
+      name,
+      price: parseFloat(price)
+    }));
+  };
+
+  // Get current user ID (you should replace this with your actual auth context)
+  const getCurrentUserId = () => {
+    return localStorage.getItem('userId'); // Adjust based on your auth implementation
+  };
+
+  if (plantLoading) {
+    return (
+      <div className="bg-white">
+        <Header />
+        <div className="container mx-auto px-4 py-12 text-center">
+          <div className="text-lg">Loading plant details...</div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (plantError || !plant) {
+    return (
+      <div className="bg-white">
+        <Header />
+        <div className="container mx-auto px-4 py-12 text-center">
+          <div className="text-lg text-red-600">Error: {plantError || 'Plant not found'}</div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  const sizes = formatSizes();
+  const allImages = [plant.primary_image, ...plant.image_urls];
+  const currentUserId = getCurrentUserId();
 
   return (
     <div className="bg-white">
@@ -118,7 +172,7 @@ const PlantDetails = () => {
                       transform: `translateX(-${startImageIndex * (100 / (window.innerWidth >= 1024 ? 3 : window.innerWidth >= 640 ? 2 : 1))}%)`
                     }}
                   >
-                    {plant.images.map((image, index) => (
+                    {allImages.map((image, index) => (
                       <img
                         key={index}
                         src={image}
@@ -128,7 +182,7 @@ const PlantDetails = () => {
                     ))}
                   </div>
                 </div>
-                {plant.images.length > getVisibleImages() && (
+                {allImages.length > getVisibleImages() && (
                   <>
                     <button
                       onClick={prevImages}
@@ -154,8 +208,8 @@ const PlantDetails = () => {
                 <div>
                   <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold" style={{ color: theme.colors.primary }}>{plant.name}</h1>
                   <div className="flex items-center gap-2 sm:gap-3 mt-1 sm:mt-2">
-                    <div className="text-yellow-500 text-sm sm:text-base">{plant.ratingStars}</div>
-                    <div className="text-xs sm:text-sm text-gray-600">({plant.reviewCount} reviews)</div>
+                    <div className="text-yellow-500 text-sm sm:text-base">{'★'.repeat(Math.round(plant.avg_rating))}</div>
+                    <div className="text-xs sm:text-sm text-gray-600">({plant.review_count} reviews)</div>
                   </div>
                 </div>
                 
@@ -176,7 +230,7 @@ const PlantDetails = () => {
                 <div>
                   <h3 className="font-semibold text-base sm:text-lg lg:text-xl" style={{ color: theme.colors.primary }}>Care Tips</h3>
                   <ul className="list-disc pl-4 sm:pl-5 mt-1 sm:mt-2 text-xs sm:text-sm lg:text-base text-gray-700 space-y-1">
-                    {plant.careTips.map((tip, index) => (
+                    {plant.care_tips.map((tip, index) => (
                       <li key={index}>{tip}</li>
                     ))}
                   </ul>
@@ -186,7 +240,7 @@ const PlantDetails = () => {
             
             <div className="flex flex-col gap-4 sm:gap-6 lg:sticky lg:top-4 bg-white p-4 sm:p-6">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.colors.primary }}>${plant.sizes[selectedSize].price}</h2>
+                <h2 className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.colors.primary }}>${sizes[selectedSize].price}</h2>
                 <button 
                   onClick={toggleFavorite}
                   className="p-1 sm:p-2 text-gray-400 hover:text-red-500 transition-colors"
@@ -206,7 +260,7 @@ const PlantDetails = () => {
               <div>
                 <h3 className="font-semibold text-sm sm:text-base lg:text-lg" style={{ color: theme.colors.primary }}>Select Size:</h3>
                 <div className="space-y-2 sm:space-y-3 mt-2 sm:mt-3">
-                  {plant.sizes.map((size, index) => (
+                  {sizes.map((size, index) => (
                     <div 
                       key={index}
                       onClick={() => setSelectedSize(index)}
@@ -254,24 +308,74 @@ const PlantDetails = () => {
               </p>
               
               <div className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-gray-200">
-                <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold mb-4 sm:mb-6" style={{ color: theme.colors.primary }}>Customer Reviews</h2>
-                {plant.reviews.map(review => (
-                  <div key={review.id} className="mb-4 sm:mb-6 pb-4 sm:pb-6 border-b border-gray-200 last:border-b-0">
-                    <div className="flex items-center gap-2 sm:gap-3">
-                      <div className="text-yellow-500 text-sm sm:text-base">{'★'.repeat(review.rating)}</div>
-                      <span className="text-xs sm:text-sm text-gray-500">{review.date}</span>
-                    </div>
-                    <p className="mt-1 sm:mt-2 text-xs sm:text-sm lg:text-base text-gray-700 italic">"{review.text}"</p>
-                    <p className="text-right text-xs sm:text-sm text-gray-600 mt-1 sm:mt-2">– {review.author}</p>
-                  </div>
-                ))}
+                <div className="flex justify-between items-center mb-4 sm:mb-6">
+                  <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold" style={{ color: theme.colors.primary }}>Customer Reviews</h2>
+                  <Button 
+                    onClick={() => setShowReviewForm(!showReviewForm)}
+                    className="text-xs sm:text-sm"
+                  >
+                    {showReviewForm ? 'Cancel' : 'Add Review'}
+                  </Button>
+                </div>
                 
-                <Button
-                  type="secondary"
-                  className="w-full mt-3 sm:mt-4 text-xs sm:text-sm lg:text-base"
-                >
-                  Write a Review
-                </Button>
+                {showReviewForm && (
+                  <form onSubmit={handleAddReview} className="mb-6 p-4 bg-gray-50 rounded">
+                    <div className="mb-3">
+                      <label className="block text-sm font-medium mb-1">Rating</label>
+                      <select 
+                        value={newReview.rating}
+                        onChange={(e) => setNewReview({...newReview, rating: parseInt(e.target.value)})}
+                        className="w-full p-2 border rounded"
+                      >
+                        <option value={5}>5 Stars</option>
+                        <option value={4}>4 Stars</option>
+                        <option value={3}>3 Stars</option>
+                        <option value={2}>2 Stars</option>
+                        <option value={1}>1 Star</option>
+                      </select>
+                    </div>
+                    <div className="mb-3">
+                      <label className="block text-sm font-medium mb-1">Review</label>
+                      <textarea 
+                        value={newReview.text}
+                        onChange={(e) => setNewReview({...newReview, text: e.target.value})}
+                        className="w-full p-2 border rounded"
+                        rows="3"
+                        required
+                      />
+                    </div>
+                    <Button type="submit" className="w-full">Submit Review</Button>
+                  </form>
+                )}
+                
+                {reviewsLoading ? (
+                  <div>Loading reviews...</div>
+                ) : reviewsError ? (
+                  <div className="text-red-600">Error loading reviews: {reviewsError}</div>
+                ) : reviews.length === 0 ? (
+                  <div className="text-gray-500 italic">No reviews yet. Be the first to review!</div>
+                ) : (
+                  reviews.map(review => (
+                    <div key={review.review_id} className="mb-4 sm:mb-6 pb-4 sm:pb-6 border-b border-gray-200 last:border-b-0">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-2 sm:gap-3">
+                          <div className="text-yellow-500 text-sm sm:text-base">{'★'.repeat(review.rating)}</div>
+                          <span className="text-xs sm:text-sm text-gray-500">{review.review_date}</span>
+                        </div>
+                        {currentUserId && review.user_id.toString() === currentUserId && (
+                          <button 
+                            onClick={() => handleDeleteReview(review.review_id)}
+                            className="text-red-500 text-xs sm:text-sm hover:text-red-700"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                      <p className="mt-1 sm:mt-2 text-xs sm:text-sm lg:text-base text-gray-700 italic">"{review.review_text}"</p>
+                      <p className="text-right text-xs sm:text-sm text-gray-600 mt-1 sm:mt-2">– {review.reviewer_name}</p>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>

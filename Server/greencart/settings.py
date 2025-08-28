@@ -29,7 +29,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'corsheaders',
     'home',
-        'plant_collection',
+    'plant_collection',
     'plant_detail',
     'user_profile_sidebar',
     'cart_sidebar',

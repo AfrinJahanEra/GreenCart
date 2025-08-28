@@ -1,74 +1,78 @@
 import { useState, useEffect } from 'react';
 import { homeAPI } from '../services/api';
+import { handleApiError } from '../utils/errorHandler';
 
+// In each hook, replace the error setting with:
 export const useTopCategories = () => {
-  const [categories, setCategories] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+    const [categories, setCategories] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        setLoading(true);
-        const response = await homeAPI.getTopCategories();
-        setCategories(response.data.categories);
-      } catch (err) {
-        setError(err.message || 'Failed to fetch categories');
-      } finally {
-        setLoading(false);
-      }
-    };
+    useEffect(() => {
+        const fetchCategories = async () => {
+            try {
+                setLoading(true);
+                const response = await homeAPI.getTopCategories();
+                setCategories(response.data.categories);
+            } catch (err) {
+                setError(handleApiError(err));
+            } finally {
+                setLoading(false);
+            }
+        };
 
-    fetchCategories();
-  }, []);
+        fetchCategories();
+    }, []);
 
-  return { categories, loading, error };
+    return { categories, loading, error };
 };
 
 export const useTopPlants = () => {
-  const [plants, setPlants] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+    const [plants, setPlants] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const fetchPlants = async () => {
-      try {
-        setLoading(true);
-        const response = await homeAPI.getTopPlants();
-        setPlants(response.data);
-      } catch (err) {
-        setError(err.message || 'Failed to fetch plants');
-      } finally {
-        setLoading(false);
-      }
-    };
+    useEffect(() => {
+        const fetchPlants = async () => {
+            try {
+                setLoading(true);
+                const response = await homeAPI.getTopPlants();
+                setPlants(response.data);
+            } catch (err) {
+                setError(handleApiError(err));
+            }
+            finally {
+                setLoading(false);
+            }
+        };
 
-    fetchPlants();
-  }, []);
+        fetchPlants();
+    }, []);
 
-  return { plants, loading, error };
+    return { plants, loading, error };
 };
 
 export const useTopSellers = () => {
-  const [sellers, setSellers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+    const [sellers, setSellers] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const fetchSellers = async () => {
-      try {
-        setLoading(true);
-        const response = await homeAPI.getTopSellers();
-        setSellers(response.data);
-      } catch (err) {
-        setError(err.message || 'Failed to fetch sellers');
-      } finally {
-        setLoading(false);
-      }
-    };
+    useEffect(() => {
+        const fetchSellers = async () => {
+            try {
+                setLoading(true);
+                const response = await homeAPI.getTopSellers();
+                setSellers(response.data);
+            } catch (err) {
+                setError(handleApiError(err));
+            }
+            finally {
+                setLoading(false);
+            }
+        };
 
-    fetchSellers();
-  }, []);
+        fetchSellers();
+    }, []);
 
-  return { sellers, loading, error };
+    return { sellers, loading, error };
 };

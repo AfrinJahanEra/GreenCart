@@ -24,6 +24,26 @@ def cart_sidebar_view(request, user_id):
     return JsonResponse({"cart_items": cart_items})
 
 
+# Add this to your views.py
+@csrf_exempt
+def add_to_cart_view(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=400)
+
+    data = json.loads(request.body)
+    user_id = data.get("user_id")
+    plant_id = data.get("plant_id")
+    size = data.get("size")
+    quantity = data.get("quantity", 1)
+
+    with connection.cursor() as cursor:
+        try:
+            cursor.callproc("add_to_cart", [user_id, plant_id, size, quantity])
+        except DatabaseError as e:
+            return JsonResponse({"error": str(e)}, status=400)
+
+    return JsonResponse({"success": True})
+
 # Toggle cart item selection
 @csrf_exempt
 def toggle_cart_item_view(request):
