@@ -96,6 +96,26 @@ CREATE TABLE user_roles (
     CONSTRAINT fk_user_roles_role FOREIGN KEY (role_id) REFERENCES roles(role_id)
 ) TABLESPACE user_data;
 
+-- Add a table for secret keys (run this in your database)
+CREATE TABLE role_secret_keys (
+    role_id NUMBER PRIMARY KEY,
+    secret_key VARCHAR2(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT SYSTIMESTAMP,
+    CONSTRAINT fk_role_secret_keys_role FOREIGN KEY (role_id) REFERENCES roles(role_id)
+);
+
+-- Insert secret keys for privileged roles (customize these keys)
+INSERT INTO role_secret_keys (role_id, secret_key) 
+SELECT role_id, 'ADMIN_SECRET_123' FROM roles WHERE role_name = 'admin';
+
+INSERT INTO role_secret_keys (role_id, secret_key) 
+SELECT role_id, 'SELLER_SECRET_456' FROM roles WHERE role_name = 'seller';
+
+INSERT INTO role_secret_keys (role_id, secret_key) 
+SELECT role_id, 'DELIVERY_SECRET_789' FROM roles WHERE role_name = 'delivery_agent';
+
+COMMIT;
+
 -- Plant and Category Tables
 CREATE TABLE plant_categories (
     category_id NUMBER PRIMARY KEY,
@@ -2553,11 +2573,13 @@ CREATE OR REPLACE PROCEDURE signup_user(
     p_lastname IN users.last_name%TYPE,
     p_phone IN users.phone%TYPE,
     p_address IN users.address%TYPE,
-    p_role_name IN roles.role_name%TYPE
+    p_role_name IN roles.role_name%TYPE,
+    p_secret_key IN VARCHAR2 DEFAULT NULL
 ) IS
     v_user_id NUMBER;
     v_role_id NUMBER;
     v_role_count NUMBER;
+    v_secret_key_match VARCHAR2(100);
 BEGIN
     -- Validate role exists
     SELECT COUNT(*) INTO v_role_count
@@ -2568,15 +2590,36 @@ BEGIN
         RAISE_APPLICATION_ERROR(-20050, 'Invalid role name: ' || p_role_name);
     END IF;
     
-    -- Insert user
-    INSERT INTO users(username, email, password_hash, first_name, last_name, phone, address)
-    VALUES (p_username, p_email, p_password, p_firstname, p_lastname, p_phone, p_address)
-    RETURNING user_id INTO v_user_id;
-    
     -- Get role_id
     SELECT role_id INTO v_role_id
     FROM roles
     WHERE role_name = p_role_name;
+    
+    -- Check if secret key is required for this role (admin, seller, delivery_agent)
+    IF p_role_name IN ('admin', 'seller', 'delivery_agent') THEN
+        IF p_secret_key IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20051, 'Secret key is required for ' || p_role_name || ' role');
+        END IF;
+        
+        -- Validate secret key
+        BEGIN
+            SELECT secret_key INTO v_secret_key_match
+            FROM role_secret_keys
+            WHERE role_id = v_role_id;
+            
+            IF v_secret_key_match != p_secret_key THEN
+                RAISE_APPLICATION_ERROR(-20052, 'Invalid secret key for ' || p_role_name || ' role');
+            END IF;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(-20053, 'No secret key configured for ' || p_role_name || ' role');
+        END;
+    END IF;
+    
+    -- Insert user
+    INSERT INTO users(username, email, password_hash, first_name, last_name, phone, address)
+    VALUES (p_username, p_email, p_password, p_firstname, p_lastname, p_phone, p_address)
+    RETURNING user_id INTO v_user_id;
     
     -- Assign role to user
     INSERT INTO user_roles(user_id, role_id, assigned_at)
@@ -2594,12 +2637,13 @@ BEGIN
 EXCEPTION
     WHEN DUP_VAL_ON_INDEX THEN
         ROLLBACK;
-        DBMS_OUTPUT.PUT_LINE('Error: Username or Email already exists.');
+        RAISE_APPLICATION_ERROR(-20054, 'Username or Email already exists.');
     WHEN OTHERS THEN
         ROLLBACK;
-        DBMS_OUTPUT.PUT_LINE('Signup failed: ' || SQLERRM);
+        RAISE;
 END;
 /
+
 
 SET SERVEROUTPUT ON;
 
@@ -2669,8 +2713,6 @@ commit;
 
 
 select * from users;
-
-
 
 
 

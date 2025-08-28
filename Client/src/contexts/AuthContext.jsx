@@ -46,7 +46,8 @@ export const AuthProvider = ({ children }) => {
 
     const signup = async (userData) => {
         try {
-            const response = await authAPI.signup({
+            // Prepare data with secret key if provided
+            const signupData = {
                 username: userData.username,
                 email: userData.email,
                 password: userData.password,
@@ -55,7 +56,14 @@ export const AuthProvider = ({ children }) => {
                 phone: userData.phone,
                 address: userData.address,
                 role_name: userData.role_name
-            });
+            };
+            
+            // Add secret key if provided (for privileged roles)
+            if (userData.secret_key) {
+                signupData.secret_key = userData.secret_key;
+            }
+            
+            const response = await authAPI.signup(signupData);
             return { success: true, message: response.data.message };
         } catch (error) {
             return {

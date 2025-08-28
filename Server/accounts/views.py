@@ -6,6 +6,7 @@ import hashlib
 from datetime import datetime
 
 
+# views.py
 @csrf_exempt
 def signup(request):
     if request.method != "POST":
@@ -24,17 +25,39 @@ def signup(request):
         password = data.get("password")
         password_hash = hashlib.sha256(password.encode()).hexdigest()
 
+        # Check if secret key is required
+        role_name = data.get("role_name")
+        secret_key = data.get("secret_key", "")
+        
+        if role_name in ["admin", "seller", "delivery_agent"] and not secret_key:
+            return JsonResponse({"error": f"Secret key is required for {role_name} role"}, status=400)
+
         with connection.cursor() as cursor:
-            cursor.callproc("signup_user", [
-                data.get("username"),
-                data.get("email"),
-                password_hash,
-                data.get("first_name"),
-                data.get("last_name"),
-                data.get("phone"),
-                data.get("address"),
-                data.get("role_name")  # New role_name parameter
-            ])
+            if role_name in ["admin", "seller", "delivery_agent"]:
+                # Call the procedure with secret key for privileged roles
+                cursor.callproc("signup_user", [
+                    data.get("username"),
+                    data.get("email"),
+                    password_hash,
+                    data.get("first_name"),
+                    data.get("last_name"),
+                    data.get("phone"),
+                    data.get("address"),
+                    role_name,
+                    secret_key
+                ])
+            else:
+                # Call the procedure without secret key for customer role
+                cursor.callproc("signup_user", [
+                    data.get("username"),
+                    data.get("email"),
+                    password_hash,
+                    data.get("first_name"),
+                    data.get("last_name"),
+                    data.get("phone"),
+                    data.get("address"),
+                    role_name
+                ])
 
         return JsonResponse({"message": "Signup successful"}, status=201)
 

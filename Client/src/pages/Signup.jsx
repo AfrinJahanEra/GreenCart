@@ -1,3 +1,4 @@
+// Signup.jsx
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -15,10 +16,12 @@ const Signup = () => {
     last_name: '',
     phone: '',
     address: '',
-    role_name: 'customer'  // Default role
+    role_name: 'customer',  // Default role
+    secret_key: ''          // New field for secret key
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showSecretKey, setShowSecretKey] = useState(false);
   
   const { signup } = useAuth();
   const navigate = useNavigate();
@@ -30,6 +33,13 @@ const Signup = () => {
 
     if (userData.password !== userData.confirmPassword) {
       setError('Passwords do not match');
+      setLoading(false);
+      return;
+    }
+
+    // Check if secret key is required but not provided
+    if (['admin', 'seller', 'delivery_agent'].includes(userData.role_name) && !userData.secret_key) {
+      setError('Secret key is required for this role');
       setLoading(false);
       return;
     }
@@ -47,10 +57,20 @@ const Signup = () => {
   };
 
   const handleChange = (e) => {
+    const { name, value } = e.target;
     setUserData({
       ...userData,
-      [e.target.name]: e.target.value
+      [name]: value
     });
+
+    // Show/hide secret key field based on role selection
+    if (name === 'role_name') {
+      setShowSecretKey(['admin', 'seller', 'delivery_agent'].includes(value));
+      setUserData(prev => ({
+        ...prev,
+        secret_key: '' // Reset secret key when role changes
+      }));
+    }
   };
 
   return (
@@ -190,7 +210,33 @@ const Signup = () => {
                   <option value="delivery_agent">Delivery Agent</option>
                   <option value="admin">Admin</option>
                 </select>
+                <p className="mt-1 text-xs text-gray-500">
+                  {userData.role_name !== 'customer' 
+                    ? 'Secret key required for this role' 
+                    : 'No secret key needed for customer role'}
+                </p>
               </div>
+              
+              {showSecretKey && (
+                <div>
+                  <label htmlFor="secret_key" className="block text-sm font-medium text-gray-700">
+                    Secret Key
+                  </label>
+                  <input
+                    id="secret_key"
+                    name="secret_key"
+                    type="password"
+                    required={showSecretKey}
+                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500"
+                    placeholder={`Enter ${userData.role_name} secret key`}
+                    value={userData.secret_key}
+                    onChange={handleChange}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Contact administrator to get the secret key for {userData.role_name} role
+                  </p>
+                </div>
+              )}
               
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-gray-700">
