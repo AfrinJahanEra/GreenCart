@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { theme } from '../../theme';
 
 const Customers = () => {
-  const { customers, loading, error } = useOutletContext();
+  const { customers, loading, error, refreshAllData } = useOutletContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCustomer, setNewCustomer] = useState({
@@ -13,14 +13,15 @@ const Customers = () => {
     address: '',
   });
 
-  // Debug: Log customers data
-  console.log('Customers data:', customers);
-
   const filteredCustomers = Array.isArray(customers)
-    ? customers.filter(customer =>
-        customer.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        customer.email?.toLowerCase().includes(searchTerm.toLowerCase())
-      )
+    ? customers.filter(customer => {
+        const fullName = `${customer.first_name || ''} ${customer.last_name || ''}`.toLowerCase();
+        return (
+          fullName.includes(searchTerm.toLowerCase()) ||
+          customer.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          customer.phone?.includes(searchTerm)
+        );
+      })
     : [];
 
   const handleInputChange = (e) => {
@@ -28,106 +29,138 @@ const Customers = () => {
     setNewCustomer(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleAddCustomer = (e) => {
+  const handleAddCustomer = async (e) => {
     e.preventDefault();
+    // Note: This is a placeholder since backend doesn't have add customer endpoint
     console.log('Add customer:', newCustomer);
     setShowAddModal(false);
     setNewCustomer({ name: '', email: '', phone: '', address: '' });
+  };
+
+  const handleRetry = () => {
+    refreshAllData();
   };
 
   return (
     <div className="overflow-x-auto">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <h1 className="text-2xl font-bold" style={{ color: theme.colors.primary }}>Customer Management</h1>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="bg-[#224229] text-white px-4 py-2 rounded-lg hover:bg-[#4b6250] transition-colors w-full md:w-auto"
-        >
-          Add New Customer
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={refreshAllData}
+            className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+          >
+            Refresh
+          </button>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="bg-[#224229] text-white px-4 py-2 rounded-lg hover:bg-[#4b6250] transition-colors"
+          >
+            Add New Customer
+          </button>
+        </div>
       </div>
+
       <div className="mb-6">
         <input
           type="text"
-          placeholder="Search customers..."
+          placeholder="Search customers by name, email, or phone..."
           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
       </div>
-      {loading.customers && <div className="text-center">Loading customers...</div>}
-      {error.customers && <div className="text-red-500 mb-4">{error.customers}</div>}
-      {!loading.customers && !error.customers && !Array.isArray(customers) && (
-        <div className="text-red-500 mb-4">Error: Invalid customer data format</div>
-      )}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="hidden md:grid grid-cols-12 bg-gray-100 p-3 font-medium">
-          <div className="col-span-3">Name</div>
-          <div className="col-span-3">Email</div>
-          <div className="col-span-2">Phone</div>
-          <div className="col-span-2">Orders</div>
-          <div className="col-span-2">Actions</div>
+
+      {error.customers && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <svg className="h-5 w-5 text-red-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span className="text-red-700">{error.customers}</span>
+            </div>
+            <button
+              onClick={handleRetry}
+              className="text-red-700 hover:text-red-900 underline text-sm"
+            >
+              Retry
+            </button>
+          </div>
         </div>
-        {filteredCustomers.length > 0 ? (
-          filteredCustomers.map(customer => (
-            <div key={customer.id} className="grid grid-cols-1 md:grid-cols-12 p-4 border-b gap-4 md:gap-0">
-              <div className="md:hidden space-y-2">
-                <div className="flex justify-between">
-                  <span className="font-medium">Name:</span>
-                  <span>{customer.name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-medium">Email:</span>
-                  <span className="text-sm">{customer.email}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-medium">Phone:</span>
-                  <span className="text-sm">{customer.phone}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-medium">Orders:</span>
-                  <span>{customer.orders || 0}</span>
-                </div>
-                <div className="flex justify-between pt-2">
-                  <span className="font-medium">Actions:</span>
-                  <div className="flex gap-2">
-                    <button className="text-blue-500 hover:text-blue-700">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                      </svg>
-                    </button>
-                    <button className="text-red-500 hover:text-red-700">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                    </button>
+      )}
+
+      {loading.customers ? (
+        <div className="flex justify-center items-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#224229]"></div>
+          <span className="ml-2">Loading customers...</span>
+        </div>
+      ) : (
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div className="hidden md:grid grid-cols-12 bg-gray-100 p-3 font-medium">
+            <div className="col-span-3">Name</div>
+            <div className="col-span-3">Email</div>
+            <div className="col-span-2">Phone</div>
+            <div className="col-span-2">Orders</div>
+            <div className="col-span-2">Actions</div>
+          </div>
+          
+          {filteredCustomers.length > 0 ? (
+            filteredCustomers.map(customer => (
+              <div key={customer.user_id} className="grid grid-cols-1 md:grid-cols-12 p-4 border-b gap-4 md:gap-0">
+                <div className="md:hidden space-y-2">
+                  <div className="flex justify-between">
+                    <span className="font-medium">Name:</span>
+                    <span>{`${customer.first_name} ${customer.last_name}`}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium">Email:</span>
+                    <span className="text-sm">{customer.email}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium">Phone:</span>
+                    <span className="text-sm">{customer.phone || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium">Orders:</span>
+                    <span>{customer.activity_count || 0}</span>
+                  </div>
+                  <div className="flex justify-between pt-2">
+                    <span className="font-medium">Actions:</span>
+                    <div className="flex gap-2">
+                      <button className="text-blue-500 hover:text-blue-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
+                
+                <div className="hidden md:grid col-span-3 font-medium items-center">
+                  {`${customer.first_name} ${customer.last_name}`}
+                </div>
+                <div className="hidden md:grid col-span-3 items-center">{customer.email}</div>
+                <div className="hidden md:grid col-span-2 items-center">{customer.phone || 'N/A'}</div>
+                <div className="hidden md:grid col-span-2 items-center">{customer.activity_count || 0}</div>
+                <div className="hidden md:grid col-span-2 items-center flex gap-2">
+                  <button className="text-blue-500 hover:text-blue-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                    </svg>
+                  </button>
+                </div>
               </div>
-              <div className="hidden md:grid col-span-3 font-medium items-center">{customer.name}</div>
-              <div className="hidden md:grid col-span-3 items-center">{customer.email}</div>
-              <div className="hidden md:grid col-span-2 items-center">{customer.phone}</div>
-              <div className="hidden md:grid col-span-2 items-center">{customer.orders || 0}</div>
-              <div className="hidden md:grid col-span-2 items-center flex gap-2">
-                <button className="text-blue-500 hover:text-blue-700">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                  </svg>
-                </button>
-                <button className="text-red-500 hover:text-red-700">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                </button>
-              </div>
+            ))
+          ) : (
+            <div className="p-8 text-center text-gray-500">
+              {searchTerm ? 'No customers found matching your search' : 'No customers found'}
             </div>
-          ))
-        ) : (
-          <div className="p-4 text-center text-gray-500">
-            No customers found
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
+
+      {/* Add Customer Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-lg w-full max-w-md">
@@ -170,7 +203,6 @@ const Customers = () => {
                   value={newCustomer.phone}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  required
                 />
               </div>
               <div className="mb-4">

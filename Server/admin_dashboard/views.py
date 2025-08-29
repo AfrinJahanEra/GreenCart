@@ -123,66 +123,79 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django.contrib.auth.models import User  # Adjust based on your user model
 from django.db.models import Count, Avg, Max
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from django.db import connection
+import oracledb
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdminUser])
 def get_user_list(request, role_name):
     try:
-        if role_name not in ['customer', 'delivery', 'sales']:
-            return Response({'status': 'error', 'message': 'Invalid role'}, status=400)
+        # Validate role name
+        valid_roles = ['customer', 'delivery', 'seller']
+        if role_name.lower() not in valid_roles:
+            return Response({
+                'status': 'error', 
+                'message': f'Invalid role. Must be one of: {", ".join(valid_roles)}'
+            }, status=400)
 
-        # Adjust the filter based on your user model and role field
-        # Assuming a custom User model with a 'role' field
-        users = User.objects.filter(role=role_name)
+        with connection.cursor() as cursor:
+            # Define output parameters
+            user_details_cursor = None
+            total_users = 0
+            avg_metric = 0
+            max_metric = 0
+            
+            # Execute PL/SQL block with bind variables
+            cursor.execute("""
+                DECLARE
+                    v_user_details SYS_REFCURSOR;
+                    v_total_users NUMBER;
+                    v_avg_metric NUMBER;
+                    v_max_metric NUMBER;
+                BEGIN
+                    get_user_list(:1, v_user_details, v_total_users, v_avg_metric, v_max_metric);
+                    :2 := v_user_details;
+                    :3 := v_total_users;
+                    :4 := v_avg_metric;
+                    :5 := v_max_metric;
+                END;
+            """, {
+                '1': role_name.lower(),
+                '2': cursor.var(oracledb.DB_TYPE_CURSOR),
+                '3': cursor.var(oracledb.NUMBER),
+                '4': cursor.var(oracledb.NUMBER),
+                '5': cursor.var(oracledb.NUMBER)
+            })
+            
+            # Fetch user details from cursor
+            user_details_result = cursor.bindvars['2'].getvalue()
+            user_details = []
+            if user_details_result:
+                columns = [col[0].lower() for col in user_details_result.description]
+                while True:
+                    row = user_details_result.fetchone()
+                    if row is None:
+                        break
+                    user_details.append(dict(zip(columns, row)))
+            
+            # Fetch other output values
+            total_users = cursor.bindvars['3'].getvalue() or 0
+            avg_metric = float(cursor.bindvars['4'].getvalue() or 0)
+            max_metric = float(cursor.bindvars['5'].getvalue() or 0)
+            
+            response_data = {
+                'role_name': role_name,
+                'total_users': total_users,
+                'avg_metric': round(avg_metric, 2),
+                'max_metric': max_metric,
+                'users': user_details
+            }
 
-        # Calculate metrics (example: orders for customers, deliveries for agents, sales for reps)
-        if role_name == 'customer':
-            user_data = [
-                {
-                    'id': user.id,
-                    'name': user.get_full_name() or user.username,
-                    'email': user.email,
-                    'phone': getattr(user, 'phone_number', ''),  # Adjust if phone is in a profile model
-                    'orders': user.orders.count()  # Adjust based on your Order model
-                } for user in users
-            ]
-            avg_metric = users.aggregate(avg_orders=Avg('orders__id', distinct=True))['avg_orders'] or 0
-            max_metric = users.aggregate(max_orders=Max('orders__id'))['max_orders'] or 0
-        elif role_name == 'delivery':
-            user_data = [
-                {
-                    'id': user.id,
-                    'name': user.get_full_name() or user.username,
-                    'email': user.email,
-                    'phone': getattr(user, 'phone_number', ''),
-                    'vehicle': getattr(user, 'vehicle', 'Bike'),  # Adjust if vehicle is in a profile model
-                    'deliveries': user.deliveries.count()  # Adjust based on your Delivery model
-                } for user in users
-            ]
-            avg_metric = users.aggregate(avg_deliveries=Avg('deliveries__id', distinct=True))['avg_deliveries'] or 0
-            max_metric = users.aggregate(max_deliveries=Max('deliveries__id'))['max_deliveries'] or 0
-        elif role_name == 'sales':
-            user_data = [
-                {
-                    'id': user.id,
-                    'name': user.get_full_name() or user.username,
-                    'email': user.email,
-                    'phone': getattr(user, 'phone_number', ''),
-                    'sales': user.sales.count(),  # Adjust based on your Sales model
-                    'commission_rate': getattr(user, 'commission_rate', 10)  # Adjust if in profile model
-                } for user in users
-            ]
-            avg_metric = users.aggregate(avg_sales=Avg('sales__id', distinct=True))['avg_sales'] or 0
-            max_metric = users.aggregate(max_sales=Max('sales__id'))['max_sales'] or 0
-
-        response_data = {
-            'role_name': role_name,
-            'total_users': users.count(),
-            'avg_metric': round(avg_metric, 2),
-            'max_metric': max_metric,
-            'users': user_data
-        }
-
-        return Response({'status': 'success', 'data': response_data})
+            return Response({'status': 'success', 'data': response_data})
+            
     except Exception as e:
         return Response({'status': 'error', 'message': str(e)}, status=500)
 

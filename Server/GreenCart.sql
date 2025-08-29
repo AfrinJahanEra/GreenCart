@@ -114,6 +114,7 @@ BEGIN
 END;
 /
 
+
 CREATE TABLE plants (
     plant_id NUMBER PRIMARY KEY,
     name VARCHAR2(100) NOT NULL,
@@ -156,6 +157,8 @@ BEGIN
   :NEW.image_id := seq_plant_images.NEXTVAL;
 END;
 /
+
+
 
 CREATE TABLE plant_sizes (
     size_id NUMBER PRIMARY KEY,
@@ -208,6 +211,7 @@ BEGIN
   :NEW.discount_id := seq_discounts.NEXTVAL;
 END;
 /
+
 
 CREATE TABLE plant_discounts (
     plant_discount_id NUMBER PRIMARY KEY,
@@ -1754,7 +1758,7 @@ CREATE OR REPLACE PROCEDURE confirm_delivery (
     v_agent_id NUMBER;
     v_customer_id NUMBER;
 BEGIN
-    -- Get delivery confirmation record
+
     SELECT confirmation_id, customer_confirmed, agent_confirmed, agent_id, user_id
     INTO v_confirmation_id, v_customer_confirmed, v_agent_confirmed, v_agent_id, v_customer_id
     FROM delivery_confirmations
@@ -1911,8 +1915,10 @@ END;
 /
 
 -- 3. Procedure to show users role-wise information
+
 CREATE OR REPLACE PROCEDURE get_user_list (
     p_role_name IN VARCHAR2,
+    p_user_details OUT SYS_REFCURSOR,
     p_total_users OUT NUMBER,
     p_avg_metric OUT NUMBER,
     p_max_metric OUT NUMBER
@@ -1925,6 +1931,42 @@ BEGIN
     JOIN user_roles ur ON u.user_id = ur.user_id
     JOIN roles r ON ur.role_id = r.role_id
     WHERE r.role_name = p_role_name AND u.is_active = 1;
+
+    -- Open cursor with user details
+    OPEN p_user_details FOR
+    SELECT 
+        u.user_id,
+        u.username,
+        u.email,
+        u.first_name,
+        u.last_name,
+        u.phone,
+        u.address,
+        u.profile_image,
+        u.created_at,
+        u.last_login,
+        CASE 
+            WHEN p_role_name = 'customer' THEN 
+                (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.user_id)
+            WHEN p_role_name = 'delivery' THEN 
+                (SELECT COUNT(*) FROM order_assignments oa 
+                 JOIN delivery_agents da ON oa.agent_id = da.agent_id 
+                 WHERE da.user_id = u.user_id)
+            WHEN p_role_name = 'seller' THEN 
+                (SELECT COUNT(*) FROM plants p WHERE p.seller_id = u.user_id)
+            ELSE 0
+        END AS activity_count
+    FROM 
+        users u
+    JOIN 
+        user_roles ur ON u.user_id = ur.user_id
+    JOIN 
+        roles r ON ur.role_id = r.role_id
+    WHERE 
+        r.role_name = p_role_name 
+        AND u.is_active = 1
+    ORDER BY 
+        u.created_at DESC;
 
     -- Calculate metrics based on role
     IF p_role_name = 'customer' THEN
@@ -2599,6 +2641,7 @@ END;
 
 -- Seller procedures
 
+-- 1. Get Seller Statistics (Total Plants, Total Sales, Total Earnings)
 CREATE OR REPLACE PROCEDURE get_seller_stats (
     p_seller_id IN NUMBER,
     p_cursor OUT SYS_REFCURSOR
@@ -2606,7 +2649,7 @@ CREATE OR REPLACE PROCEDURE get_seller_stats (
 BEGIN
     OPEN p_cursor FOR
     SELECT 
-        (SELECT COUNT(*) FROM plants WHERE seller_id = p_seller_id) AS total_plants,
+        (SELECT COUNT(*) FROM plants WHERE seller_id = p_seller_id AND is_active = 1) AS total_plants,
         (SELECT NVL(SUM(oi.quantity), 0) FROM order_items oi 
          JOIN plants p ON oi.plant_id = p.plant_id 
          JOIN orders o ON oi.order_id = o.order_id 
@@ -2621,27 +2664,75 @@ BEGIN
 END;
 /
 
+-- 2. Get Recent Sales (Last 5 orders)
+CREATE OR REPLACE PROCEDURE get_recent_sales (
+    p_seller_id IN NUMBER,
+    p_cursor OUT SYS_REFCURSOR
+) AS
+BEGIN
+    OPEN p_cursor FOR
+    SELECT 
+        o.order_id,
+        TO_CHAR(o.order_date, 'YYYY-MM-DD') AS order_date,
+        p.name AS plant_name,
+        oi.quantity,
+        (oi.quantity * oi.unit_price) AS total_amount
+    FROM order_items oi
+    JOIN plants p ON oi.plant_id = p.plant_id
+    JOIN orders o ON oi.order_id = o.order_id
+    WHERE p.seller_id = p_seller_id
+    AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')
+    ORDER BY o.order_date DESC
+    FETCH FIRST 5 ROWS ONLY;
+END;
+/
+
+-- 3. Get Low Stock Plants (Stock less than 10)
+CREATE OR REPLACE PROCEDURE get_low_stock_plants (
+    p_seller_id IN NUMBER,
+    p_cursor OUT SYS_REFCURSOR
+) AS
+BEGIN
+    OPEN p_cursor FOR
+    SELECT 
+        plant_id,
+        name,
+        stock_quantity,
+        base_price
+    FROM plants
+    WHERE seller_id = p_seller_id
+    AND stock_quantity < 10
+    AND is_active = 1
+    ORDER BY stock_quantity ASC;
+END;
+/
+
+-- 4. Get All Plants with Details
 CREATE OR REPLACE PROCEDURE get_seller_plants (
     p_seller_id IN NUMBER,
     p_cursor OUT SYS_REFCURSOR
 ) AS
 BEGIN
     OPEN p_cursor FOR
-        SELECT 
-            p.plant_id,
-            p.name,
-            p.base_price,
-            p.stock_quantity,
-            COUNT(pcm.category_id) AS category_count
-        FROM plants p
-        LEFT JOIN plant_category_mapping pcm ON p.plant_id = pcm.plant_id
-        WHERE p.seller_id = p_seller_id
-        AND p.is_active = 1
-        GROUP BY p.plant_id, p.name, p.base_price, p.stock_quantity;
+    SELECT 
+        p.plant_id,
+        p.name,
+        p.description,
+        p.base_price,
+        p.stock_quantity,
+        (SELECT image_url FROM plant_images WHERE plant_id = p.plant_id AND is_primary = 1 AND ROWNUM = 1) AS primary_image,
+        LISTAGG(pc.name, ', ') WITHIN GROUP (ORDER BY pc.name) AS categories
+    FROM plants p
+    LEFT JOIN plant_category_mapping pcm ON p.plant_id = pcm.plant_id
+    LEFT JOIN plant_categories pc ON pcm.category_id = pc.category_id
+    WHERE p.seller_id = p_seller_id
+    AND p.is_active = 1
+    GROUP BY p.plant_id, p.name, p.description, p.base_price, p.stock_quantity
+    ORDER BY p.created_at DESC;
 END;
 /
 
-
+-- 5. Get Sales Records
 CREATE OR REPLACE PROCEDURE get_seller_sales (
     p_seller_id IN NUMBER,
     p_cursor OUT SYS_REFCURSOR
@@ -2663,25 +2754,33 @@ BEGIN
     JOIN orders o ON oi.order_id = o.order_id
     JOIN order_statuses os ON o.status_id = os.status_id
     WHERE p.seller_id = p_seller_id
-    AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')
     ORDER BY o.order_date DESC;
 END;
 /
 
--- Procedure to add plant with all details
+-- 6. Add New Plant
+-- Drop the existing procedure
+DROP PROCEDURE add_plant;
 
-CREATE OR REPLACE PROCEDURE add_plant (
+-- Create a function instead
+-- Drop the existing function
+DROP FUNCTION add_plant_func;
+
+-- Create a new function without COMMIT
+CREATE OR REPLACE FUNCTION add_plant_func (
     p_name IN VARCHAR2,
     p_description IN CLOB,
     p_base_price IN NUMBER,
     p_stock_quantity IN NUMBER,
     p_seller_id IN NUMBER,
-    p_category_ids IN VARCHAR2, -- Comma-separated category IDs
-    p_images IN VARCHAR2, -- Comma-separated image URLs
-    p_features IN VARCHAR2, -- Comma-separated features
-    p_care_tips IN VARCHAR2, -- Comma-separated care tips
-    p_sizes IN VARCHAR2 -- Comma-separated size:adjustment pairs (e.g., "Small:-5.00,Medium:0.00,Large:10.00")
-) AS
+    p_category_ids IN VARCHAR2,
+    p_images IN VARCHAR2,
+    p_features IN VARCHAR2,
+    p_care_tips IN VARCHAR2,
+    p_sizes IN VARCHAR2
+) RETURN NUMBER
+AS
+    PRAGMA AUTONOMOUS_TRANSACTION; -- Add this to allow DML operations
     v_plant_id NUMBER;
     v_category_id NUMBER;
     v_image_url VARCHAR2(255);
@@ -2690,9 +2789,9 @@ CREATE OR REPLACE PROCEDURE add_plant (
     v_size_name VARCHAR2(50);
     v_price_adjustment NUMBER(10,2);
     v_idx NUMBER;
-    v_seller_count NUMBER := 0; -- added
+    v_seller_count NUMBER := 0;
 BEGIN
-    -- Validate seller (fixed: use COUNT instead of IF NOT EXISTS)
+    -- Validate seller
     SELECT COUNT(*) INTO v_seller_count
     FROM users u
     JOIN user_roles ur ON u.user_id = ur.user_id
@@ -2750,17 +2849,17 @@ BEGIN
         VALUES (v_plant_id, v_size_name, v_price_adjustment);
     END LOOP;
     
-    COMMIT;
+    COMMIT; -- This is now allowed with AUTONOMOUS_TRANSACTION
+    RETURN v_plant_id;
+    
 EXCEPTION
     WHEN OTHERS THEN
         ROLLBACK;
         RAISE;
 END;
 /
-
-
--- Procedure to update plant details
-
+DROP PROCEDURE add_plant;
+-- 7. Update Plant Details
 CREATE OR REPLACE PROCEDURE update_plant_details (
     p_requestor_id    IN NUMBER,
     p_plant_id        IN NUMBER,
@@ -2768,11 +2867,11 @@ CREATE OR REPLACE PROCEDURE update_plant_details (
     p_description     IN CLOB DEFAULT NULL,
     p_base_price      IN NUMBER DEFAULT NULL,
     p_stock_quantity  IN NUMBER DEFAULT NULL,
-    p_category_ids    IN VARCHAR2 DEFAULT NULL, -- Comma-separated category IDs
-    p_images          IN VARCHAR2 DEFAULT NULL, -- Comma-separated image URLs
-    p_features        IN VARCHAR2 DEFAULT NULL, -- Comma-separated features
-    p_care_tips       IN VARCHAR2 DEFAULT NULL, -- Comma-separated care tips
-    p_sizes           IN VARCHAR2 DEFAULT NULL  -- Comma-separated size:adjustment pairs
+    p_category_ids    IN VARCHAR2 DEFAULT NULL,
+    p_images          IN VARCHAR2 DEFAULT NULL,
+    p_features        IN VARCHAR2 DEFAULT NULL,
+    p_care_tips       IN VARCHAR2 DEFAULT NULL,
+    p_sizes           IN VARCHAR2 DEFAULT NULL
 ) AS
     v_seller_id NUMBER;
     v_is_admin  NUMBER := 0;
@@ -2784,7 +2883,7 @@ CREATE OR REPLACE PROCEDURE update_plant_details (
     v_size_name VARCHAR2(50);
     v_price_adjustment NUMBER(10,2);
 BEGIN
-    -- verify plant exists and get its seller
+    -- Verify plant exists and get its seller
     BEGIN
         SELECT seller_id INTO v_seller_id FROM plants WHERE plant_id = p_plant_id;
     EXCEPTION
@@ -2792,19 +2891,19 @@ BEGIN
             RAISE_APPLICATION_ERROR(-20024, 'Plant not found');
     END;
 
-    -- check if requestor is admin
+    -- Check if requestor is admin
     SELECT COUNT(*) INTO v_is_admin
     FROM user_roles ur
     JOIN roles r ON ur.role_id = r.role_id
     WHERE ur.user_id = p_requestor_id
       AND r.role_name = 'admin';
 
-    -- allow only admin or the original seller to update
+    -- Allow only admin or the original seller to update
     IF v_is_admin = 0 AND p_requestor_id != v_seller_id THEN
         RAISE_APPLICATION_ERROR(-20023, 'Not authorized: only admin or the seller who uploaded the plant can update it');
     END IF;
 
-    -- update only provided fields (NULL means leave unchanged)
+    -- Update only provided fields
     UPDATE plants
     SET name          = NVL(p_name, name),
         description   = CASE WHEN p_description IS NOT NULL THEN p_description ELSE description END,
@@ -2813,7 +2912,7 @@ BEGIN
         updated_at    = SYSTIMESTAMP
     WHERE plant_id = p_plant_id;
 
-    -- categories: replace only if passed
+    -- Categories: replace only if passed
     IF p_category_ids IS NOT NULL THEN
         DELETE FROM plant_category_mapping WHERE plant_id = p_plant_id;
         FOR i IN 1..REGEXP_COUNT(p_category_ids, '[^,]+') LOOP
@@ -2823,7 +2922,7 @@ BEGIN
         END LOOP;
     END IF;
 
-    -- images: replace only if passed (first image is primary)
+    -- Images: replace only if passed
     IF p_images IS NOT NULL THEN
         DELETE FROM plant_images WHERE plant_id = p_plant_id;
         FOR i IN 1..REGEXP_COUNT(p_images, '[^,]+') LOOP
@@ -2833,7 +2932,7 @@ BEGIN
         END LOOP;
     END IF;
 
-    -- features: replace only if passed
+    -- Features: replace only if passed
     IF p_features IS NOT NULL THEN
         DELETE FROM plant_features WHERE plant_id = p_plant_id;
         FOR i IN 1..REGEXP_COUNT(p_features, '[^,]+') LOOP
@@ -2843,7 +2942,7 @@ BEGIN
         END LOOP;
     END IF;
 
-    -- care tips: replace only if passed
+    -- Care tips: replace only if passed
     IF p_care_tips IS NOT NULL THEN
         DELETE FROM plant_care_tips WHERE plant_id = p_plant_id;
         FOR i IN 1..REGEXP_COUNT(p_care_tips, '[^,]+') LOOP
@@ -2853,7 +2952,7 @@ BEGIN
         END LOOP;
     END IF;
 
-    -- sizes: replace only if passed (format Size:Adjustment)
+    -- Sizes: replace only if passed
     IF p_sizes IS NOT NULL THEN
         DELETE FROM plant_sizes WHERE plant_id = p_plant_id;
         FOR i IN 1..REGEXP_COUNT(p_sizes, '[^,]+') LOOP
@@ -2873,66 +2972,47 @@ EXCEPTION
 END;
 /
 
--- Procedure to delete plant (only by admin or original seller)
-
-CREATE OR REPLACE PROCEDURE delete_plant (
-    p_requestor_id IN NUMBER,
-    p_plant_id     IN NUMBER
+-- 8. Get Plant Details for Editing
+CREATE OR REPLACE PROCEDURE get_plant_details (
+    p_plant_id IN NUMBER,
+    p_cursor OUT SYS_REFCURSOR
 ) AS
-    v_seller_id NUMBER;
-    v_is_admin  NUMBER := 0;
 BEGIN
-    -- verify plant exists and fetch seller
-    BEGIN
-        SELECT seller_id INTO v_seller_id
-        FROM plants
-        WHERE plant_id = p_plant_id;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20024, 'Plant not found');
-    END;
-
-    -- check if requestor is admin
-    SELECT COUNT(*) INTO v_is_admin
-    FROM user_roles ur
-    JOIN roles r ON ur.role_id = r.role_id
-    WHERE ur.user_id = p_requestor_id
-      AND r.role_name = 'admin';
-
-    -- allow only admin or the original seller to delete (deactivate)
-    IF v_is_admin = 0 AND p_requestor_id != v_seller_id THEN
-        RAISE_APPLICATION_ERROR(-20023, 'Not authorized: only admin or the seller who uploaded the plant can delete it');
-    END IF;
-
-    -- Soft-delete the plant to preserve referential integrity
-    UPDATE plants
-    SET is_active = 0,
-        updated_at = SYSTIMESTAMP
-    WHERE plant_id = p_plant_id;
-
-    -- Clean up promotional / user references so deactivated plant doesn't appear in listings
-    DELETE FROM plant_discounts WHERE plant_id = p_plant_id;
-    DELETE FROM favorites WHERE plant_id = p_plant_id;
-    DELETE FROM carts WHERE plant_id = p_plant_id;
-
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
+    OPEN p_cursor FOR
+    SELECT 
+        p.plant_id,
+        p.name,
+        p.description,
+        p.base_price,
+        p.stock_quantity,
+        p.seller_id,
+        (SELECT LISTAGG(category_id, ',') WITHIN GROUP (ORDER BY category_id) 
+         FROM plant_category_mapping WHERE plant_id = p.plant_id) AS category_ids,
+        (SELECT LISTAGG(image_url, ',') WITHIN GROUP (ORDER BY image_id) 
+         FROM plant_images WHERE plant_id = p.plant_id) AS image_urls,
+        (SELECT LISTAGG(feature_text, ',') WITHIN GROUP (ORDER BY feature_id) 
+         FROM plant_features WHERE plant_id = p.plant_id) AS features,
+        (SELECT LISTAGG(tip_text, ',') WITHIN GROUP (ORDER BY tip_id) 
+         FROM plant_care_tips WHERE plant_id = p.plant_id) AS care_tips,
+        (SELECT LISTAGG(size_name || ':' || price_adjustment, ',') WITHIN GROUP (ORDER BY size_id) 
+         FROM plant_sizes WHERE plant_id = p.plant_id) AS sizes
+    FROM plants p
+    WHERE p.plant_id = p_plant_id;
 END;
 /
 
--- Trigger to handle stock adjustment on plant deactivation
-
-CREATE OR REPLACE TRIGGER trg_plants_deactivate_zero_stock
-BEFORE UPDATE OF is_active ON plants
-FOR EACH ROW
-WHEN (OLD.is_active = 1 AND NEW.is_active = 0)
+-- Function to get all plant categories
+CREATE OR REPLACE FUNCTION get_plant_categories
+RETURN SYS_REFCURSOR
+AS
+    p_cursor SYS_REFCURSOR;
 BEGIN
-  -- When a plant is deactivated (soft-deleted), clear its stock so it won't appear available.
-  :NEW.stock_quantity := 0;
-  :NEW.updated_at := SYSTIMESTAMP;
+    OPEN p_cursor FOR
+    SELECT category_id, name, slug, description
+    FROM plant_categories
+    ORDER BY name;
+    
+    RETURN p_cursor;
 END;
 /
 
