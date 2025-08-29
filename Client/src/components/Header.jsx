@@ -30,7 +30,9 @@ const Header = () => {
 
   // Define dashboard link based on role
   const getDashboardLink = () => {
-    switch (user?.role) {
+    if (!user || !user.role) return '/';
+    
+    switch (user.role.toLowerCase()) {
       case 'seller':
         return '/seller/dashboard';
       case 'delivery_agent':
@@ -39,6 +41,22 @@ const Header = () => {
         return '/admin/dashboard';
       default:
         return '/';
+    }
+  };
+
+  // Get role display name
+  const getRoleDisplayName = () => {
+    if (!user || !user.role) return '';
+    
+    switch (user.role.toLowerCase()) {
+      case 'seller':
+        return 'Seller';
+      case 'delivery_agent':
+        return 'Delivery Agent';
+      case 'admin':
+        return 'Admin';
+      default:
+        return 'Customer';
     }
   };
 
@@ -131,13 +149,18 @@ const Header = () => {
               ) : (
                 <>
                   {/* Non-Customer Header: Dashboard Link Only */}
-                  <Link
-                    to={getDashboardLink()}
-                    className="text-sm sm:text-base font-medium hover:text-green-600"
-                    style={{ color: theme.colors.accent }}
-                  >
-                    Go to {user.role.charAt(0).toUpperCase() + user.role.slice(1)} Dashboard
-                  </Link>
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-gray-600">
+                      Welcome, {user.first_name} ({getRoleDisplayName()})
+                    </span>
+                    <Link
+                      to={getDashboardLink()}
+                      className="text-sm sm:text-base font-medium hover:text-green-600 px-3 py-1 rounded border"
+                      style={{ color: theme.colors.accent, borderColor: theme.colors.accent }}
+                    >
+                      Go to Dashboard
+                    </Link>
+                  </div>
                 </>
               )
             ) : (

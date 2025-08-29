@@ -47,6 +47,7 @@ CREATE SEQUENCE review_id_seq START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
 CREATE SEQUENCE seq_plant_features START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE seq_plant_care_tips START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE seq_carts START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE role_scret_keys START WITH 1 INCREMENT BY 1;
 
 -- User and Role Tables
 CREATE TABLE roles (
@@ -95,26 +96,6 @@ CREATE TABLE user_roles (
     CONSTRAINT fk_user_roles_user FOREIGN KEY (user_id) REFERENCES users(user_id),
     CONSTRAINT fk_user_roles_role FOREIGN KEY (role_id) REFERENCES roles(role_id)
 ) TABLESPACE user_data;
-
--- Add a table for secret keys (run this in your database)
-CREATE TABLE role_secret_keys (
-    role_id NUMBER PRIMARY KEY,
-    secret_key VARCHAR2(100) NOT NULL,
-    created_at TIMESTAMP DEFAULT SYSTIMESTAMP,
-    CONSTRAINT fk_role_secret_keys_role FOREIGN KEY (role_id) REFERENCES roles(role_id)
-);
-
--- Insert secret keys for privileged roles (customize these keys)
-INSERT INTO role_secret_keys (role_id, secret_key) 
-SELECT role_id, 'ADMIN_SECRET_123' FROM roles WHERE role_name = 'admin';
-
-INSERT INTO role_secret_keys (role_id, secret_key) 
-SELECT role_id, 'SELLER_SECRET_456' FROM roles WHERE role_name = 'seller';
-
-INSERT INTO role_secret_keys (role_id, secret_key) 
-SELECT role_id, 'DELIVERY_SECRET_789' FROM roles WHERE role_name = 'delivery_agent';
-
-COMMIT;
 
 -- Plant and Category Tables
 CREATE TABLE plant_categories (
@@ -297,8 +278,6 @@ CREATE TABLE orders (
     CONSTRAINT fk_orders_delivery_method FOREIGN KEY (delivery_method_id) REFERENCES delivery_methods(method_id)
 ) TABLESPACE order_data;
 
-select order_id from orders
-where user_id = 5;
 
 CREATE OR REPLACE TRIGGER trg_orders_id
 BEFORE INSERT ON orders
@@ -518,7 +497,11 @@ CREATE TABLE activity_log (
     CONSTRAINT fk_activity_log_user FOREIGN KEY (user_id) REFERENCES users(user_id)
 ) TABLESPACE user_data;
 
-CREATE SEQUENCE seq_activity_log START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE seq_activity_log
+    START WITH 1
+    INCREMENT BY 1
+    NOCACHE
+    NOCYCLE;
 
 CREATE OR REPLACE TRIGGER trg_activity_log_id
 BEFORE INSERT ON activity_log
@@ -563,7 +546,6 @@ SELECT seq_discount_types.NEXTVAL, 'Special', 'Special promotional discount' FRO
 WHERE NOT EXISTS (SELECT 1 FROM discount_types WHERE name = 'Special');
 
 -- Indexes
---CREATE INDEX idx_users_email ON users(email) TABLESPACE index_data;
 CREATE INDEX idx_users_phone ON users(phone) TABLESPACE index_data;
 CREATE INDEX idx_plants_name ON plants(name) TABLESPACE index_data;
 CREATE INDEX idx_plant_categories_slug ON plant_categories(slug) TABLESPACE index_data;
@@ -572,8 +554,6 @@ CREATE INDEX idx_orders_status ON orders(status_id) TABLESPACE index_data;
 CREATE INDEX idx_orders_number ON orders(order_number) TABLESPACE index_data;
 CREATE INDEX idx_order_items_order ON order_items(order_id) TABLESPACE index_data;
 CREATE INDEX idx_order_items_plant ON order_items(plant_id) TABLESPACE index_data;
---CREATE INDEX idx_favorites_user ON favorites(user_id) TABLESPACE index_data;
---CREATE INDEX idx_favorites_plant ON favorites(plant_id) TABLESPACE index_data;
 CREATE INDEX idx_reviews_plant ON reviews(plant_id) TABLESPACE index_data;
 CREATE INDEX idx_reviews_user ON reviews(user_id) TABLESPACE index_data;
 
@@ -2565,6 +2545,10 @@ END;
 
 -- sign up page
 
+
+select * from roles;
+
+-- Step 3: Recreate signup_user (as provided)
 CREATE OR REPLACE PROCEDURE signup_user(
     p_username IN users.username%TYPE,
     p_email IN users.email%TYPE,
@@ -2579,7 +2563,7 @@ CREATE OR REPLACE PROCEDURE signup_user(
     v_user_id NUMBER;
     v_role_id NUMBER;
     v_role_count NUMBER;
-    v_secret_key_match VARCHAR2(100);
+    v_expected_key VARCHAR2(100);
 BEGIN
     -- Validate role exists
     SELECT COUNT(*) INTO v_role_count
@@ -2601,19 +2585,17 @@ BEGIN
             RAISE_APPLICATION_ERROR(-20051, 'Secret key is required for ' || p_role_name || ' role');
         END IF;
         
-        -- Validate secret key
-        BEGIN
-            SELECT secret_key INTO v_secret_key_match
-            FROM role_secret_keys
-            WHERE role_id = v_role_id;
-            
-            IF v_secret_key_match != p_secret_key THEN
-                RAISE_APPLICATION_ERROR(-20052, 'Invalid secret key for ' || p_role_name || ' role');
-            END IF;
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                RAISE_APPLICATION_ERROR(-20053, 'No secret key configured for ' || p_role_name || ' role');
-        END;
+        -- Validate secret key (hardcoded for security)
+        CASE p_role_name
+            WHEN 'admin' THEN v_expected_key := 'ADMIN_SECRET_123';
+            WHEN 'seller' THEN v_expected_key := 'SELLER_SECRET_456';
+            WHEN 'delivery_agent' THEN v_expected_key := 'DELIVERY_SECRET_789';
+            ELSE v_expected_key := NULL;
+        END CASE;
+        
+        IF p_secret_key != v_expected_key THEN
+            RAISE_APPLICATION_ERROR(-20052, 'Invalid secret key for ' || p_role_name || ' role');
+        END IF;
     END IF;
     
     -- Insert user
@@ -2643,81 +2625,188 @@ EXCEPTION
         RAISE;
 END;
 /
-
-
-SET SERVEROUTPUT ON;
-
+select * from users;
+-- Step 4: Insert Users via signup_user
 BEGIN
-    signup_user(
-        p_username  => 'newuser1',
-        p_email     => 'newuser1@example.com',
-        p_password  => 'hash123',
-        p_firstname => 'New',
-        p_lastname  => 'User',
-        p_phone     => '0123456789',
-        p_address   => '123 New Street'
-    );
+    DBMS_OUTPUT.PUT_LINE('Inserting Users via signup_user...');
+    
+    -- Insert Customer
+    BEGIN
+        signup_user(
+            p_username => 'haha',
+            p_email => 'haha@example.com',
+            p_password => '1234',
+            p_firstname => 'John',
+            p_lastname => 'Doe',
+            p_phone => '1234567890',
+            p_address => '123 Main St',
+            p_role_name => 'customer',
+            p_secret_key => NULL
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            DBMS_OUTPUT.PUT_LINE('Customer Signup Failed: ' || SQLERRM);
+    END;
+
+    -- Insert Admin
+    BEGIN
+        signup_user(
+            p_username => 'huhu',
+            p_email => 'huhu@example.com',
+            p_password => '1234',
+            p_firstname => 'Jane',
+            p_lastname => 'Admin',
+            p_phone => '9876543210',
+            p_address => '456 Admin Ave',
+            p_role_name => 'admin',
+            p_secret_key => 'ADMIN_SECRET_123'
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            DBMS_OUTPUT.PUT_LINE('Admin Signup Failed: ' || SQLERRM);
+    END;
+
+    -- Insert Seller
+    BEGIN
+        signup_user(
+            p_username => 'lala',
+            p_email => 'lala@example.com',
+            p_password => '1234',
+            p_firstname => 'Sam',
+            p_lastname => 'Seller',
+            p_phone => '5551234567',
+            p_address => '789 Seller Rd',
+            p_role_name => 'seller',
+            p_secret_key => 'SELLER_SECRET_456'
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            DBMS_OUTPUT.PUT_LINE('Seller Signup Failed: ' || SQLERRM);
+    END;
+
+    -- Insert Delivery Agent
+    BEGIN
+        signup_user(
+            p_username => 'lulu',
+            p_email => 'lulu@example.com',
+            p_password => '1234',
+            p_firstname => 'Mike',
+            p_lastname => 'Delivery',
+            p_phone => '5559876543',
+            p_address => '321 Delivery Ln',
+            p_role_name => 'delivery_agent',
+            p_secret_key => 'DELIVERY_SECRET_789'
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            DBMS_OUTPUT.PUT_LINE('Delivery Agent Signup Failed: ' || SQLERRM);
+    END;
+
+    -- Verify Insertions
+    DBMS_OUTPUT.PUT_LINE('Verifying Inserted Users:');
+    FOR rec IN (SELECT u.username, u.email, r.role_name
+                FROM users u
+                JOIN user_roles ur ON u.user_id = ur.user_id
+                JOIN roles r ON ur.role_id = r.role_id
+                WHERE u.username IN ('customer1', 'admin1', 'seller1', 'delivery1'))
+    LOOP
+        DBMS_OUTPUT.PUT_LINE('User: ' || rec.username || ', Email: ' || rec.email || ', Role: ' || rec.role_name);
+    END LOOP;
 END;
 /
 
-
-
-set serveroutput on;
--- login page
-select * from users;
-SET SERVEROUTPUT ON;
-
--- Make sure server output is on to see DBMS_OUTPUT
-SET SERVEROUTPUT ON;
-
-
-
-
-select * from users where username = 'newuser1';
-
-ALTER PROCEDURE login_user COMPILE;
-
-CREATE OR REPLACE PROCEDURE test_login_user(
-    p_username in users.username%type,
-    p_password in users.password_hash%type
-) IS
-    v_count NUMBER;
+CREATE OR REPLACE FUNCTION user_login_func (
+    p_email        IN VARCHAR2,
+    p_password     IN VARCHAR2,
+    p_ip_address   IN VARCHAR2
+) RETURN VARCHAR2
+IS
+    PRAGMA AUTONOMOUS_TRANSACTION;
+    v_user_id   users.user_id%TYPE;
+    v_password  users.password_hash%TYPE;
+    v_user_exists NUMBER;
 BEGIN
-    
-    SELECT COUNT(*) INTO v_count
+    -- Check if user exists first
+    SELECT COUNT(*)
+    INTO v_user_exists
     FROM users
-    WHERE username = p_username AND password_hash = p_password;
-    
-    IF v_count > 0 THEN
-        DBMS_OUTPUT.PUT_LINE('Login successful for: ' || p_username);
-    ELSE
-        DBMS_OUTPUT.PUT_LINE('Invalid username/email or password.');
+    WHERE email = p_email;
+
+    IF v_user_exists = 0 THEN
+        -- Log unknown user attempt
+        INSERT INTO activity_log (activity_type, activity_details, ip_address)
+        VALUES ('LOGIN_FAILED', 'No such email: ' || p_email, p_ip_address);
+        COMMIT;
+        RETURN 'USER NOT FOUND';
     END IF;
+
+    -- Get user credentials
+    SELECT user_id, password_hash
+    INTO v_user_id, v_password
+    FROM users
+    WHERE email = p_email;
+
+    -- Check password
+    IF v_password = p_password THEN
+        -- Update last login
+        UPDATE users
+        SET last_login = SYSTIMESTAMP
+        WHERE user_id = v_user_id;
+
+        -- Log success
+        INSERT INTO activity_log (user_id, activity_type, activity_details, ip_address)
+        VALUES (v_user_id, 'LOGIN', 'User logged in successfully', p_ip_address);
+        
+        COMMIT;
+        RETURN 'LOGIN SUCCESSFUL';
+    ELSE
+        -- Log failure
+        INSERT INTO activity_log (user_id, activity_type, activity_details, ip_address)
+        VALUES (v_user_id, 'LOGIN_FAILED', 'Incorrect password', p_ip_address);
+        COMMIT;
+        
+        RETURN 'INVALID PASSWORD';
+    END IF;
+
 EXCEPTION
     WHEN OTHERS THEN
-        DBMS_OUTPUT.PUT_LINE('Login failed: ' || SQLERRM);
+        ROLLBACK;
+        RETURN 'ERROR: ' || SQLERRM;
 END;
 /
 
+-- Modified test_auth_procedures
+DECLARE
+    v_status VARCHAR2(200);
+BEGIN
+    -- test with correct email and password
+    user_login(
+        p_email => 'haha@example.com',
+        p_password => '1234',
+        p_ip_address => '192.168.0.1',
+        p_status => v_status
+    );
+    DBMS_OUTPUT.PUT_LINE('Test 1: ' || v_status);
 
+    -- test with wrong password
+    user_login(
+        p_email => 'huhu@example.com',
+        p_password => '1234',
+        p_ip_address => '192.168.0.2',
+        p_status => v_status
+    );
+    DBMS_OUTPUT.PUT_LINE('Test 2: ' || v_status);
 
-set serveroutput on;
-EXEC test_login_user('newuser1', 'hash123');
-
-
-SELECT object_name, status FROM user_objects WHERE object_name = 'LOGIN_USER';
-commit;
-
-
-
-
-
-select * from users;
-
-
-
-
-
+    -- test with non-existing user
+    user_login(
+        p_email => 'unknown@example.com',
+        p_password => 'abc',
+        p_ip_address => '192.168.0.3',
+        p_status => v_status
+    );
+    DBMS_OUTPUT.PUT_LINE('Test 3: ' || v_status);
+END;
+/
 
 
 

@@ -14,7 +14,7 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('authToken');
     if (token) {
-      config.headers.Authorization = `Token ${token}`;
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
@@ -36,6 +36,13 @@ api.interceptors.response.use(
   }
 );
 
+export const authAPI = {
+  login: (credentials) => api.post('accounts/login/', credentials),
+  signup: (userData) => api.post('accounts/signup/', userData),
+};
+
+
+
 export const homeAPI = {
   getTopCategories: () => api.get('/home/top-categories/'),
   getTopPlants: () => api.get('/home/top-plants/'),
@@ -48,14 +55,6 @@ export const plantCollectionAPI = {
   getAllCategories: () => api.get('/plant_collection/categories/'),
 };
 
-export const authAPI = {
-  login: (credentials) => api.post('/accounts/login/', credentials),
-  signup: (userData) => api.post('/accounts/signup/', userData),
-  logout: () => api.post('/accounts/logout/'),
-  getProfile: (userId) => api.get(`/user/${userId}/`),
-  updateProfile: (requestorId, userId, userData) => api.post(`/user/update/${userId}/`, userData),
-  deleteAccount: (requestorId, userId) => api.post(`/user/delete/${userId}/`),
-};
 
 export const plantDetailAPI = {
   getPlantDetails: (plantId) => api.get(`/plant_detail/plant/${plantId}/`),

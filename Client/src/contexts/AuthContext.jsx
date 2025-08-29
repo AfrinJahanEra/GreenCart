@@ -46,24 +46,7 @@ export const AuthProvider = ({ children }) => {
 
     const signup = async (userData) => {
         try {
-            // Prepare data with secret key if provided
-            const signupData = {
-                username: userData.username,
-                email: userData.email,
-                password: userData.password,
-                first_name: userData.first_name,
-                last_name: userData.last_name,
-                phone: userData.phone,
-                address: userData.address,
-                role_name: userData.role_name
-            };
-            
-            // Add secret key if provided (for privileged roles)
-            if (userData.secret_key) {
-                signupData.secret_key = userData.secret_key;
-            }
-            
-            const response = await authAPI.signup(signupData);
+            const response = await authAPI.signup(userData);
             return { success: true, message: response.data.message };
         } catch (error) {
             return {
@@ -73,16 +56,10 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const logout = async () => {
-        try {
-            await authAPI.logout();
-        } catch (error) {
-            console.error('Logout error:', error);
-        } finally {
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('userData');
-            setUser(null);
-        }
+    const logout = () => {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userData');
+        setUser(null);
     };
 
     const value = {
