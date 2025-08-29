@@ -37,11 +37,9 @@ api.interceptors.response.use(
 );
 
 export const authAPI = {
-  login: (credentials) => api.post('accounts/login/', credentials),
-  signup: (userData) => api.post('accounts/signup/', userData),
+  login: (credentials) => api.post('/accounts/login/', credentials),
+  signup: (userData) => api.post('/accounts/signup/', userData),
 };
-
-
 
 export const homeAPI = {
   getTopCategories: () => api.get('/home/top-categories/'),
@@ -55,7 +53,6 @@ export const plantCollectionAPI = {
   getAllCategories: () => api.get('/plant_collection/categories/'),
 };
 
-
 export const plantDetailAPI = {
   getPlantDetails: (plantId) => api.get(`/plant_detail/plant/${plantId}/`),
   addToCart: (cartData) => api.post('/plant_detail/cart/add/', cartData),
@@ -65,6 +62,20 @@ export const plantDetailAPI = {
     api.post(`/plant_detail/review/add/${plantId}/${userId}/`, reviewData),
   deleteReview: (requestorId, reviewId) => 
     api.post(`/plant_detail/review/delete/${requestorId}/`, { review_id: reviewId }),
+};
+
+export const adminAPI = {
+  getDashboardStats: () => api.get('/admin_dashboard/stats/'),
+  getActivityLog: (activityType, startDate, endDate) => api.post('/admin_dashboard/activity-log/', { activity_type: activityType, start_date: startDate, end_date: endDate }),
+  getUserList: (roleName) => api.get(`/admin_dashboard/user-list/${roleName}/`),
+  assignDeliveryAgent: (orderId, agentId) => api.post('/admin_dashboard/assign-delivery-agent/', { order_id: orderId, agent_id: agentId }),
+  getLowStockAlerts: (resolved) => api.post('/admin_dashboard/low-stock-alerts/', { resolved }),
+  getAllOrdersWithDelivery: () => api.get('/admin_dashboard/all-orders/'),
+  getOrderDetails: (orderId) => api.get(`/admin_dashboard/order-details/${orderId}/`),
+  applyDiscount: (discountData) => api.post('/admin_dashboard/apply-discount/', discountData),
+  getOrderOverview: () => api.get('/admin_dashboard/order-overview/'),
+  getLowStockDetails: () => api.get('/admin_dashboard/low-stock-details/'),
+  getDeliveryAgentPerformance: () => api.get('/admin_dashboard/delivery-agent-performance/'),
 };
 
 export const addReview = (plantId, userId, reviewData) => {

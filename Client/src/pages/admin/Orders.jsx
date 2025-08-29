@@ -3,45 +3,23 @@ import { useOutletContext } from 'react-router-dom';
 import { theme } from '../../theme';
 
 const Orders = () => {
-  const { users, onUpdateUser } = useOutletContext();
+  const { orders, deliveryAgents, assignDeliveryAgent, loading, error } = useOutletContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [assigningOrder, setAssigningOrder] = useState(null);
   const [selectedAgent, setSelectedAgent] = useState('');
 
-  // Combine orders with customer and delivery agent info
-  const ordersWithDetails = users.orders.map(order => {
-    const customer = users.customers.find(c => c.name === order.customer) || {};
-    const agent = users.deliveryAgents.find(a => a.id === order.assignedAgent) || {};
-    return {
-      ...order,
-      customerPhone: customer.phone,
-      customerEmail: customer.email,
-      agentName: agent.name || 'Unassigned'
-    };
-  });
-
-  const filteredOrders = ordersWithDetails.filter(order =>
-    order.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    order.id.toString().includes(searchTerm) ||
-    order.agentName.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredOrders = orders.filter(order =>
+    order.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    order.order_number?.toString().includes(searchTerm) ||
+    order.agent_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleAssignAgent = (orderId) => {
-    const order = users.orders.find(o => o.id === orderId);
-    if (!order) return;
-
-    const updatedOrder = {
-      ...order,
-      assignedAgent: selectedAgent,
-      status: selectedAgent ? 'Assigned' : 'Processing'
-    };
-
-    // Update the order in the users context
-    const updatedOrders = users.orders.map(o => 
-      o.id === orderId ? updatedOrder : o
-    );
-
-    onUpdateUser('orders', updatedOrders);
+  const handleAssignAgent = async (orderId) => {
+    if (!selectedAgent) {
+      await assignDeliveryAgent(orderId, null); // Unassign
+    } else {
+      await assignDeliveryAgent(orderId, selectedAgent);
+    }
     setAssigningOrder(null);
     setSelectedAgent('');
   };
@@ -74,9 +52,9 @@ const Orders = () => {
           </svg>
         </div>
       </div>
-
+      {loading.orders && <div className="text-center">Loading orders...</div>}
+      {error.orders && <div className="text-red-500 mb-4">{error.orders}</div>}
       <div className="bg-white rounded-lg shadow overflow-hidden">
-        {/* Header - hidden on mobile */}
         <div className="hidden md:grid grid-cols-12 bg-gray-100 p-3 font-medium">
           <div className="col-span-1">Order ID</div>
           <div className="col-span-2">Customer</div>
@@ -86,56 +64,54 @@ const Orders = () => {
           <div className="col-span-2">Delivery Agent</div>
           <div className="col-span-2">Actions</div>
         </div>
-
         {filteredOrders.length > 0 ? (
           filteredOrders.map(order => (
-            <div key={order.id} className="grid grid-cols-1 md:grid-cols-12 p-4 border-b gap-4 md:gap-0">
-              {/* Mobile view */}
+            <div key={order.order_id} className="grid grid-cols-1 md:grid-cols-12 p-4 border-b gap-4 md:gap-0">
               <div className="md:hidden space-y-2">
                 <div className="flex justify-between">
                   <span className="font-medium">Order ID:</span>
-                  <span>#{order.id}</span>
+                  <span>#{order.order_number}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Customer:</span>
                   <div className="text-right">
-                    <div className="font-medium">{order.customer}</div>
-                    <div className="text-sm text-gray-500">{order.date}</div>
+                    <div className="font-medium">{order.customer_name}</div>
+                    <div className="text-sm text-gray-500">{order.order_date}</div>
                   </div>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Contact:</span>
                   <div className="text-right">
-                    <div className="text-sm">{order.customerEmail}</div>
-                    <div className="text-sm text-gray-500">{order.customerPhone}</div>
+                    <div className="text-sm">{order.customer_email}</div>
+                    <div className="text-sm text-gray-500">{order.customer_phone}</div>
                   </div>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Amount:</span>
-                  <span>${order.amount}</span>
+                  <span>${order.total_amount?.toFixed(2) || 'N/A'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Status:</span>
                   <span className={`px-2 py-1 rounded-full text-xs ${
-                    order.status === 'Delivered' ? 'bg-green-100 text-green-800' :
-                    order.status === 'Shipped' ? 'bg-blue-100 text-blue-800' :
-                    order.status === 'Assigned' ? 'bg-purple-100 text-purple-800' :
+                    order.order_status === 'Delivered' ? 'bg-green-100 text-green-800' :
+                    order.order_status === 'Shipped' ? 'bg-blue-100 text-blue-800' :
+                    order.order_status === 'Assigned' ? 'bg-purple-100 text-purple-800' :
                     'bg-yellow-100 text-yellow-800'
                   }`}>
-                    {order.status}
+                    {order.order_status}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Agent:</span>
-                  <span>{order.agentName}</span>
+                  <span>{order.agent_name || 'Unassigned'}</span>
                 </div>
                 <div className="flex justify-between pt-2">
                   <span className="font-medium">Actions:</span>
                   <div className="flex gap-2">
                     <button
                       onClick={() => {
-                        setAssigningOrder(order.id);
-                        setSelectedAgent(order.assignedAgent || '');
+                        setAssigningOrder(order.order_id);
+                        setSelectedAgent(order.agent_id || '');
                       }}
                       className="text-blue-500 hover:text-blue-700 text-sm flex items-center gap-1"
                     >
@@ -153,36 +129,32 @@ const Orders = () => {
                   </div>
                 </div>
               </div>
-              
-              {/* Desktop view */}
-              <div className="hidden md:grid col-span-1 font-medium items-center">#{order.id}</div>
+              <div className="hidden md:grid col-span-1 font-medium items-center">#{order.order_number}</div>
               <div className="hidden md:grid col-span-2 items-center">
-                <div className="font-medium">{order.customer}</div>
-                <div className="text-sm text-gray-500">{order.date}</div>
+                <div className="font-medium">{order.customer_name}</div>
+                <div className="text-sm text-gray-500">{order.order_date}</div>
               </div>
               <div className="hidden md:grid col-span-2 items-center">
-                <div>{order.customerEmail}</div>
-                <div className="text-sm text-gray-500">{order.customerPhone}</div>
+                <div className="text-sm">{order.customer_email}</div>
+                <div className="text-sm text-gray-500">{order.customer_phone}</div>
               </div>
-              <div className="hidden md:grid col-span-1 items-center">${order.amount}</div>
+              <div className="hidden md:grid col-span-1 items-center">${order.total_amount?.toFixed(2) || 'N/A'}</div>
               <div className="hidden md:grid col-span-2 items-center">
                 <span className={`px-2 py-1 rounded-full text-xs ${
-                  order.status === 'Delivered' ? 'bg-green-100 text-green-800' :
-                  order.status === 'Shipped' ? 'bg-blue-100 text-blue-800' :
-                  order.status === 'Assigned' ? 'bg-purple-100 text-purple-800' :
+                  order.order_status === 'Delivered' ? 'bg-green-100 text-green-800' :
+                  order.order_status === 'Shipped' ? 'bg-blue-100 text-blue-800' :
+                  order.order_status === 'Assigned' ? 'bg-purple-100 text-purple-800' :
                   'bg-yellow-100 text-yellow-800'
                 }`}>
-                  {order.status}
+                  {order.order_status}
                 </span>
               </div>
-              <div className="hidden md:grid col-span-2 items-center">
-                {order.agentName}
-              </div>
+              <div className="hidden md:grid col-span-2 items-center">{order.agent_name || 'Unassigned'}</div>
               <div className="hidden md:grid col-span-2 items-center flex gap-2">
                 <button
                   onClick={() => {
-                    setAssigningOrder(order.id);
-                    setSelectedAgent(order.assignedAgent || '');
+                    setAssigningOrder(order.order_id);
+                    setSelectedAgent(order.agent_id || '');
                   }}
                   className="text-blue-500 hover:text-blue-700 text-sm flex items-center gap-1"
                 >
@@ -206,45 +178,33 @@ const Orders = () => {
           </div>
         )}
       </div>
-
-      {/* Assign Delivery Agent Modal */}
       {assigningOrder && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-lg w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold" style={{ color: theme.colors.primary }}>
-                Assign Delivery Agent for Order #{assigningOrder}
-              </h2>
-              <button 
-                onClick={() => setAssigningOrder(null)} 
-                className="text-gray-500 hover:text-gray-700"
-              >
+              <h2 className="text-xl font-bold" style={{ color: theme.colors.primary }}>Assign Delivery Agent</h2>
+              <button onClick={() => setAssigningOrder(null)} className="text-gray-500 hover:text-gray-700">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>
-                Select Delivery Agent
-              </label>
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>Select Delivery Agent</label>
               <select
                 value={selectedAgent}
                 onChange={(e) => setSelectedAgent(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
               >
-                <option value="">-- Unassigned --</option>
-                {users.deliveryAgents.map(agent => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name} ({agent.vehicle})
-                  </option>
+                <option value="">Unassign</option>
+                {deliveryAgents.map(agent => (
+                  <option key={agent.id} value={agent.id}>{agent.name}</option>
                 ))}
               </select>
             </div>
-
             <div className="flex flex-col sm:flex-row justify-end gap-3">
               <button
+                type="button"
                 onClick={() => setAssigningOrder(null)}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors order-2 sm:order-1"
               >
@@ -254,7 +214,7 @@ const Orders = () => {
                 onClick={() => handleAssignAgent(assigningOrder)}
                 className="bg-[#224229] text-white px-4 py-2 rounded-lg hover:bg-[#4b6250] transition-colors order-1 sm:order-2"
               >
-                Assign Agent
+                Assign
               </button>
             </div>
           </div>

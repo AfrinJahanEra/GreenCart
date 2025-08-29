@@ -2,8 +2,9 @@ from django.contrib import admin
 from django.urls import path, include
 from home import views
 from accounts import urls
+from admin_dashboard import urls 
+
 urlpatterns = [
-    path('admin/', admin.site.urls),
     path('home/', include('home.urls')),
     path("plant_collection/", include("plant_collection.urls")),
     path('plant_detail/', include('plant_detail.urls')),

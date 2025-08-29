@@ -1648,74 +1648,6 @@ EXCEPTION
 END;
 /
 
--- admin dashboard page
-
--- Procedure to apply discount
-
-CREATE OR REPLACE PROCEDURE apply_discount (
-    p_discount_type_id IN NUMBER,
-    p_discount_value IN NUMBER,
-    p_is_percentage IN NUMBER,
-    p_start_date IN TIMESTAMP,
-    p_end_date IN TIMESTAMP,
-    p_category_id IN NUMBER DEFAULT NULL,
-    p_plant_id IN NUMBER DEFAULT NULL
-) AS
-    v_discount_id NUMBER;
-    v_discount_type_name VARCHAR2(50);
-BEGIN
-    -- Validate inputs
-    IF p_discount_type_id IS NULL OR p_discount_value IS NULL OR p_start_date IS NULL OR p_end_date IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20012, 'Required discount parameters cannot be null');
-    END IF;
-    
-    -- Check if plant-wise discount requires plant_id
-    SELECT name INTO v_discount_type_name 
-    FROM discount_types 
-    WHERE discount_type_id = p_discount_type_id;
-    
-    IF v_discount_type_name = 'Plant-specific' AND p_plant_id IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20013, 'Plant-specific discount requires a plant ID');
-    END IF;
-    
-    IF v_discount_type_name = 'Category' AND p_category_id IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20014, 'Category discount requires a category ID');
-    END IF;
-    
-    -- Create discount
-    INSERT INTO discounts (discount_type_id, name, description, discount_value, is_percentage, start_date, end_date)
-    VALUES (
-        p_discount_type_id,
-        (SELECT name FROM discount_types WHERE discount_type_id = p_discount_type_id) || ' Discount',
-        'Applied discount',
-        p_discount_value,
-        p_is_percentage,
-        p_start_date,
-        p_end_date
-    ) RETURNING discount_id INTO v_discount_id;
-    
-    -- Apply discount to plants or categories
-    IF v_discount_type_name = 'Plant-specific' THEN
-        INSERT INTO plant_discounts (plant_id, discount_id)
-        VALUES (p_plant_id, v_discount_id);
-    ELSIF v_discount_type_name = 'Category' THEN
-        INSERT INTO plant_discounts (category_id, discount_id)
-        VALUES (p_category_id, v_discount_id);
-    ELSE
-        -- For seasonal, festive, special discounts - apply to all plants
-        INSERT INTO plant_discounts (discount_id)
-        SELECT v_discount_id FROM dual;
-    END IF;
-    
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END;
-/
-
-
 
 -- Procedure to get order details with delivery info
 
@@ -1771,7 +1703,7 @@ BEGIN
 END;
 /
 
--- admin
+-- admin dashboard
 -- Procedure to get all orders for a user
 
 
@@ -1861,9 +1793,10 @@ EXCEPTION
         RAISE;
 END;
 /
-
+select * from orders;
 -- Admin dashboard procedures
 
+-- 1. Procedure to show total users by role
 CREATE OR REPLACE PROCEDURE get_admin_dashboard_stats (
     p_total_customers OUT NUMBER,
     p_total_delivery_agents OUT NUMBER,
@@ -1873,176 +1806,55 @@ CREATE OR REPLACE PROCEDURE get_admin_dashboard_stats (
     p_low_stock_alerts OUT NUMBER
 ) AS
 BEGIN
-    SELECT 
-        (SELECT COUNT(*) FROM users u 
-         JOIN user_roles ur ON u.user_id = ur.user_id 
-         JOIN roles r ON ur.role_id = r.role_id 
-         WHERE r.role_name = 'customer'),
-        (SELECT COUNT(*) FROM delivery_agents WHERE is_active = 1),
-        (SELECT COUNT(*) FROM users u 
-         JOIN user_roles ur ON u.user_id = ur.user_id 
-         JOIN roles r ON ur.role_id = r.role_id 
-         WHERE r.role_name = 'seller'),
-        (SELECT NVL(SUM(total_amount), 0) FROM orders 
-         WHERE status_id IN (SELECT status_id FROM order_statuses WHERE status_name IN ('Delivered', 'Shipped'))),
-        (SELECT COUNT(*) FROM orders 
-         WHERE status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Processing')),
-        (SELECT COUNT(*) FROM low_stock_alerts WHERE is_resolved = 0)
-    INTO p_total_customers, p_total_delivery_agents, p_total_sellers, 
-         p_total_revenue, p_pending_orders, p_low_stock_alerts
-    FROM dual;
-END;
-/
-
-CREATE OR REPLACE PROCEDURE get_user_list (
-    p_role_name IN VARCHAR2,
-    p_total_users OUT NUMBER,
-    p_avg_metric OUT NUMBER,
-    p_max_metric OUT NUMBER
-) AS
-BEGIN
-    SELECT 
-        COUNT(*),
-        AVG(CASE 
-            WHEN p_role_name = 'customer' THEN
-                (SELECT COUNT(*) FROM orders o 
-                 WHERE o.user_id = u.user_id 
-                 AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'))
-            WHEN p_role_name = 'delivery' THEN
-                (SELECT COUNT(*) FROM order_assignments oa 
-                 JOIN orders o ON oa.order_id = o.order_id 
-                 WHERE oa.agent_id = da.agent_id 
-                 AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'))
-            WHEN p_role_name = 'seller' THEN
-                (SELECT COUNT(*) FROM plants p WHERE p.seller_id = u.user_id)
-        END),
-        MAX(CASE 
-            WHEN p_role_name = 'customer' THEN
-                (SELECT COUNT(*) FROM orders o 
-                 WHERE o.user_id = u.user_id 
-                 AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'))
-            WHEN p_role_name = 'delivery' THEN
-                (SELECT COUNT(*) FROM order_assignments oa 
-                 JOIN orders o ON oa.order_id = o.order_id 
-                 WHERE oa.agent_id = da.agent_id 
-                 AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'))
-            WHEN p_role_name = 'seller' THEN
-                (SELECT COUNT(*) FROM plants p WHERE p.seller_id = u.user_id)
-        END)
-    INTO p_total_users, p_avg_metric, p_max_metric
+    -- Get total customers
+    SELECT COUNT(DISTINCT u.user_id)
+    INTO p_total_customers
     FROM users u
     JOIN user_roles ur ON u.user_id = ur.user_id
     JOIN roles r ON ur.role_id = r.role_id
-    LEFT JOIN delivery_agents da ON u.user_id = da.user_id AND p_role_name = 'delivery'
-    WHERE r.role_name = p_role_name
-    AND u.is_active = 1;
+    WHERE r.role_name = 'customer' AND u.is_active = 1;
+
+    -- Get total delivery agents
+    SELECT COUNT(*)
+    INTO p_total_delivery_agents
+    FROM delivery_agents
+    WHERE is_active = 1;
+
+    -- Get total sellers
+    SELECT COUNT(DISTINCT u.user_id)
+    INTO p_total_sellers
+    FROM users u
+    JOIN user_roles ur ON u.user_id = ur.user_id
+    JOIN roles r ON ur.role_id = r.role_id
+    WHERE r.role_name = 'seller' AND u.is_active = 1;
+
+    -- Get total revenue from delivered orders
+    SELECT NVL(SUM(total_amount), 0)
+    INTO p_total_revenue
+    FROM orders 
+    WHERE status_id IN (
+        SELECT status_id FROM order_statuses 
+        WHERE status_name IN ('Delivered', 'Completed')
+    );
+
+    -- Get pending orders
+    SELECT COUNT(*)
+    INTO p_pending_orders
+    FROM orders 
+    WHERE status_id IN (
+        SELECT status_id FROM order_statuses 
+        WHERE status_name IN ('Processing', 'Pending', 'Confirmed')
+    );
+
+    -- Get unresolved low stock alerts
+    SELECT COUNT(*)
+    INTO p_low_stock_alerts
+    FROM low_stock_alerts 
+    WHERE is_resolved = 0;
 END;
 /
 
--- Procedure to assign delivery agent with slot checking
-
-CREATE OR REPLACE PROCEDURE assign_delivery_agent (
-    p_order_id IN NUMBER,
-    p_agent_id IN NUMBER DEFAULT NULL
-) AS
-    v_available_agent_id NUMBER;
-    v_order_date DATE;
-    v_delivery_method_id NUMBER;
-    v_estimated_days VARCHAR2(50);
-    v_slot_date DATE;
-    v_slot_time VARCHAR2(20);
-    v_slot_count NUMBER := 0; -- declared to fix compiler error
-BEGIN
-    -- Get order details
-    SELECT o.order_date, o.delivery_method_id, dm.estimated_days
-    INTO v_order_date, v_delivery_method_id, v_estimated_days
-    FROM orders o
-    JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
-    WHERE o.order_id = p_order_id;
-    
-    -- Calculate delivery date based on estimated days
-    IF v_estimated_days LIKE '1-2%' THEN
-        v_slot_date := v_order_date + 2;
-    ELSIF v_estimated_days LIKE '3-5%' THEN
-        v_slot_date := v_order_date + 4;
-    ELSE
-        v_slot_date := v_order_date + 1;
-    END IF;
-    
-    -- Determine slot time (morning, afternoon, evening)
-    v_slot_time := CASE 
-        WHEN EXTRACT(HOUR FROM SYSTIMESTAMP) < 12 THEN 'morning'
-        WHEN EXTRACT(HOUR FROM SYSTIMESTAMP) < 17 THEN 'afternoon'
-        ELSE 'evening'
-    END;
-    
-    -- If no specific agent provided, find one with available slots
-    IF p_agent_id IS NULL THEN
-        SELECT agent_id INTO v_available_agent_id
-        FROM (
-            SELECT da.agent_id, COUNT(ds.slot_id) AS slot_count
-            FROM delivery_agents da
-            LEFT JOIN delivery_slots ds ON da.agent_id = ds.agent_id 
-                AND ds.slot_date = v_slot_date 
-                AND ds.is_available = 0
-            WHERE da.is_active = 1
-            GROUP BY da.agent_id
-            HAVING COUNT(ds.slot_id) < 3
-            ORDER BY slot_count ASC
-        ) WHERE ROWNUM = 1;
-    ELSE
-        v_available_agent_id := p_agent_id;
-        
-        -- Check if agent has available slots
-        SELECT COUNT(*) INTO v_slot_count
-        FROM delivery_slots
-        WHERE agent_id = v_available_agent_id
-        AND slot_date = v_slot_date
-        AND is_available = 0;
-        
-        IF v_slot_count >= 3 THEN
-            RAISE_APPLICATION_ERROR(-20019, 'Selected agent has no available slots for the delivery date');
-        END IF;
-    END IF;
-
-    IF v_available_agent_id IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20020, 'No available delivery agents found');
-    END IF;
-    
-    -- Assign agent to order
-    INSERT INTO order_assignments (order_id, agent_id)
-    VALUES (p_order_id, v_available_agent_id);
-    
-    -- Create delivery slot
-    INSERT INTO delivery_slots (agent_id, slot_date, slot_time, is_available, order_id)
-    VALUES (v_available_agent_id, v_slot_date, v_slot_time, 0, p_order_id);
-    
-    -- Create delivery confirmation record
-    INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
-    SELECT p_order_id, o.user_id, v_available_agent_id
-    FROM orders o
-    WHERE o.order_id = p_order_id;
-    
-    -- Update order status to Shipped
-    UPDATE orders
-    SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Shipped')
-    WHERE order_id = p_order_id;
-    
-    COMMIT;
-EXCEPTION
-    WHEN NO_DATA_FOUND THEN
-        ROLLBACK;
-        RAISE_APPLICATION_ERROR(-20020, 'No available delivery agents found');
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END;
-/
-
-
-
--- Procedure to get activity log
-
+-- 2. Procedure to show recent activity
 CREATE OR REPLACE PROCEDURE get_activity_log (
     p_activity_type IN VARCHAR2 DEFAULT NULL,
     p_start_date IN TIMESTAMP DEFAULT NULL,
@@ -2092,20 +1904,230 @@ BEGIN
     INTO p_recent_activity_count
     FROM activity_log 
     WHERE (p_activity_type IS NULL OR activity_type = p_activity_type)
+    AND activity_timestamp >= SYSTIMESTAMP - INTERVAL '24' HOUR
     AND (p_start_date IS NULL OR activity_timestamp >= p_start_date)
-    AND (p_end_date IS NULL OR activity_timestamp <= p_end_date)
-    AND activity_timestamp >= SYSTIMESTAMP - INTERVAL '24' HOUR;
+    AND (p_end_date IS NULL OR activity_timestamp <= p_end_date);
 END;
 /
 
--- Procedure to get low stock alerts
+-- 3. Procedure to show users role-wise information
+CREATE OR REPLACE PROCEDURE get_user_list (
+    p_role_name IN VARCHAR2,
+    p_total_users OUT NUMBER,
+    p_avg_metric OUT NUMBER,
+    p_max_metric OUT NUMBER
+) AS
+BEGIN
+    -- Get total users for the role
+    SELECT COUNT(DISTINCT u.user_id)
+    INTO p_total_users
+    FROM users u
+    JOIN user_roles ur ON u.user_id = ur.user_id
+    JOIN roles r ON ur.role_id = r.role_id
+    WHERE r.role_name = p_role_name AND u.is_active = 1;
 
+    -- Calculate metrics based on role
+    IF p_role_name = 'customer' THEN
+        -- For customers: average and max orders placed
+        SELECT 
+            AVG(order_count),
+            MAX(order_count)
+        INTO p_avg_metric, p_max_metric
+        FROM (
+            SELECT u.user_id, COUNT(o.order_id) as order_count
+            FROM users u
+            JOIN user_roles ur ON u.user_id = ur.user_id
+            JOIN roles r ON ur.role_id = r.role_id
+            LEFT JOIN orders o ON u.user_id = o.user_id
+            WHERE r.role_name = 'customer' AND u.is_active = 1
+            GROUP BY u.user_id
+        );
+        
+    ELSIF p_role_name = 'delivery' THEN
+        -- For delivery agents: average and max deliveries completed
+        SELECT 
+            AVG(delivery_count),
+            MAX(delivery_count)
+        INTO p_avg_metric, p_max_metric
+        FROM (
+            SELECT da.agent_id, COUNT(oa.assignment_id) as delivery_count
+            FROM delivery_agents da
+            JOIN users u ON da.user_id = u.user_id
+            JOIN user_roles ur ON u.user_id = ur.user_id
+            JOIN roles r ON ur.role_id = r.role_id
+            LEFT JOIN order_assignments oa ON da.agent_id = oa.agent_id
+            LEFT JOIN orders o ON oa.order_id = o.order_id
+            LEFT JOIN order_statuses os ON o.status_id = os.status_id
+            WHERE r.role_name = 'delivery' AND u.is_active = 1
+            AND os.status_name = 'Delivered'
+            GROUP BY da.agent_id
+        );
+        
+    ELSIF p_role_name = 'seller' THEN
+        -- For sellers: average and max plants listed
+        SELECT 
+            AVG(plant_count),
+            MAX(plant_count)
+        INTO p_avg_metric, p_max_metric
+        FROM (
+            SELECT u.user_id, COUNT(p.plant_id) as plant_count
+            FROM users u
+            JOIN user_roles ur ON u.user_id = ur.user_id
+            JOIN roles r ON ur.role_id = r.role_id
+            LEFT JOIN plants p ON u.user_id = p.seller_id
+            WHERE r.role_name = 'seller' AND u.is_active = 1
+            GROUP BY u.user_id
+        );
+    ELSE
+        p_avg_metric := 0;
+        p_max_metric := 0;
+    END IF;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        p_avg_metric := 0;
+        p_max_metric := 0;
+END;
+/
+
+-- 4. Procedure to assign delivery agent
+CREATE OR REPLACE PROCEDURE assign_delivery_agent (
+    p_order_id IN NUMBER,
+    p_agent_id IN NUMBER DEFAULT NULL
+) AS
+    v_available_agent_id NUMBER;
+    v_order_date DATE;
+    v_delivery_method_id NUMBER;
+    v_estimated_days VARCHAR2(50);
+    v_slot_date DATE;
+    v_slot_time VARCHAR2(20);
+    v_slot_count NUMBER;
+    v_user_id NUMBER;
+    v_status_id NUMBER;
+    v_valid_status_count NUMBER;
+BEGIN
+    -- Check if order exists and get details
+    BEGIN
+        SELECT o.user_id, o.order_date, o.delivery_method_id, 
+               dm.estimated_days, o.status_id
+        INTO v_user_id, v_order_date, v_delivery_method_id, 
+             v_estimated_days, v_status_id
+        FROM orders o
+        JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
+        WHERE o.order_id = p_order_id;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20005, 'Order does not exist');
+    END;
+    
+    -- Check if order is in a state that can be assigned
+    SELECT COUNT(*) 
+    INTO v_valid_status_count
+    FROM order_statuses 
+    WHERE status_id = v_status_id 
+    AND status_name IN ('Processing', 'Confirmed');
+    
+    IF v_valid_status_count = 0 THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Order is not in a state that can be assigned for delivery');
+    END IF;
+    
+    -- Calculate delivery date based on estimated days
+    IF v_estimated_days LIKE '1-2%' THEN
+        v_slot_date := TRUNC(v_order_date) + 2;
+    ELSIF v_estimated_days LIKE '3-5%' THEN
+        v_slot_date := TRUNC(v_order_date) + 4;
+    ELSE
+        v_slot_date := TRUNC(v_order_date) + 1;
+    END IF;
+    
+    -- Determine slot time
+    v_slot_time := CASE 
+        WHEN EXTRACT(HOUR FROM SYSTIMESTAMP) < 12 THEN 'morning'
+        WHEN EXTRACT(HOUR FROM SYSTIMESTAMP) < 17 THEN 'afternoon'
+        ELSE 'evening'
+    END;
+    
+    -- If no specific agent provided, find one with available slots
+    IF p_agent_id IS NULL THEN
+        BEGIN
+            SELECT agent_id INTO v_available_agent_id
+            FROM (
+                SELECT da.agent_id, COUNT(ds.slot_id) AS slot_count
+                FROM delivery_agents da
+                LEFT JOIN delivery_slots ds ON da.agent_id = ds.agent_id 
+                    AND ds.slot_date = v_slot_date 
+                    AND ds.is_available = 0
+                WHERE da.is_active = 1
+                GROUP BY da.agent_id
+                HAVING COUNT(ds.slot_id) < 3
+                ORDER BY slot_count ASC
+            ) WHERE ROWNUM = 1;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(-20002, 'No available delivery agents found');
+        END;
+    ELSE
+        v_available_agent_id := p_agent_id;
+        
+        -- Verify agent exists and is active
+        BEGIN
+            SELECT 1 INTO v_slot_count
+            FROM delivery_agents
+            WHERE agent_id = v_available_agent_id AND is_active = 1;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(-20003, 'Specified delivery agent does not exist or is not active');
+        END;
+        
+        -- Check if agent has available slots
+        SELECT COUNT(*) INTO v_slot_count
+        FROM delivery_slots
+        WHERE agent_id = v_available_agent_id
+        AND slot_date = v_slot_date
+        AND is_available = 0;
+        
+        IF v_slot_count >= 3 THEN
+            RAISE_APPLICATION_ERROR(-20004, 'Selected agent has no available slots for the delivery date');
+        END IF;
+    END IF;
+
+    -- Assign agent to order
+    INSERT INTO order_assignments (order_id, agent_id)
+    VALUES (p_order_id, v_available_agent_id);
+    
+    -- Create delivery slot
+    INSERT INTO delivery_slots (agent_id, slot_date, slot_time, is_available, order_id)
+    VALUES (v_available_agent_id, v_slot_date, v_slot_time, 0, p_order_id);
+    
+    -- Create delivery confirmation record
+    INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
+    VALUES (p_order_id, v_user_id, v_available_agent_id);
+    
+    -- Update order status to Shipped
+    UPDATE orders
+    SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Shipped')
+    WHERE order_id = p_order_id;
+    
+    -- Log the activity
+    INSERT INTO activity_log (user_id, activity_type, activity_details, ip_address)
+    VALUES (v_user_id, 'DELIVERY_ASSIGNED', 
+            'Delivery agent ' || v_available_agent_id || ' assigned to order ' || p_order_id, 
+            NULL);
+    
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE_APPLICATION_ERROR(-20006, 'Error in assign_delivery_agent: ' || SQLERRM);
+END;
+/
+
+-- 5. Procedure to show low stock alerts
 CREATE OR REPLACE PROCEDURE get_low_stock_alerts (
     p_resolved IN NUMBER DEFAULT NULL,
     p_total_alerts OUT NUMBER,
     p_unresolved_alerts OUT NUMBER,
     p_avg_stock_level OUT NUMBER,
-    p_most_affected_seller OUT VARCHAR2
+    p_most_affected_category OUT VARCHAR2
 ) AS
 BEGIN
     -- Get total alerts
@@ -2127,26 +2149,398 @@ BEGIN
     FROM low_stock_alerts lsa
     WHERE (p_resolved IS NULL OR lsa.is_resolved = p_resolved);
 
-    -- Get seller with most low stock alerts
+    -- Get category with most low stock alerts
     BEGIN
-        SELECT u.first_name || ' ' || u.last_name
-        INTO p_most_affected_seller
+        SELECT pc.name
+        INTO p_most_affected_category
         FROM (
-            SELECT p.seller_id, COUNT(*) as alert_count
+            SELECT pcm.category_id, COUNT(*) as alert_count
             FROM low_stock_alerts lsa
             JOIN plants p ON lsa.plant_id = p.plant_id
+            JOIN plant_category_mapping pcm ON p.plant_id = pcm.plant_id
             WHERE (p_resolved IS NULL OR lsa.is_resolved = p_resolved)
-            GROUP BY p.seller_id
+            GROUP BY pcm.category_id
             ORDER BY alert_count DESC
-        ) seller_alerts
-        JOIN users u ON seller_alerts.seller_id = u.user_id
+        ) category_alerts
+        JOIN plant_categories pc ON category_alerts.category_id = pc.category_id
         WHERE ROWNUM = 1;
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
-            p_most_affected_seller := 'None';
+            p_most_affected_category := 'None';
     END;
 END;
 /
+
+-- 6. Function to get all orders with delivery information
+CREATE OR REPLACE FUNCTION get_all_orders_with_delivery
+RETURN SYS_REFCURSOR
+AS
+    orders_cursor SYS_REFCURSOR;
+BEGIN
+    OPEN orders_cursor FOR
+    SELECT 
+        o.order_id,
+        o.order_number,
+        o.order_date,
+        os.status_name AS order_status,
+        u.user_id,
+        u.first_name || ' ' || u.last_name AS customer_name,
+        u.email AS customer_email,
+        u.phone AS customer_phone,
+        o.delivery_address,
+        dm.name AS delivery_method,
+        dm.base_cost AS delivery_cost,
+        o.total_amount,
+        o.estimated_delivery_date,
+        o.actual_delivery_date,
+        da.agent_id,
+        (SELECT first_name || ' ' || last_name FROM users WHERE user_id = da.user_id) AS delivery_agent_name,
+        da.vehicle_type,
+        oa.assigned_at,
+        oa.completed_at,
+        ds.slot_date,
+        ds.slot_time,
+        dc.customer_confirmed,
+        dc.agent_confirmed,
+        dc.confirmed_date
+    FROM 
+        orders o
+    JOIN 
+        users u ON o.user_id = u.user_id
+    JOIN 
+        order_statuses os ON o.status_id = os.status_id
+    JOIN 
+        delivery_methods dm ON o.delivery_method_id = dm.method_id
+    LEFT JOIN 
+        order_assignments oa ON o.order_id = oa.order_id
+    LEFT JOIN 
+        delivery_agents da ON oa.agent_id = da.agent_id
+    LEFT JOIN 
+        delivery_slots ds ON o.order_id = ds.order_id
+    LEFT JOIN 
+        delivery_confirmations dc ON o.order_id = dc.order_id
+    ORDER BY 
+        o.order_date DESC;
+        
+    RETURN orders_cursor;
+END;
+/
+
+-- 7. Procedure to get order details by ID
+CREATE OR REPLACE PROCEDURE get_order_details (
+    p_order_id IN NUMBER,
+    p_order_details OUT SYS_REFCURSOR,
+    p_order_items OUT SYS_REFCURSOR
+) AS
+BEGIN
+    -- Get order details
+    OPEN p_order_details FOR
+    SELECT 
+        o.order_id,
+        o.order_number,
+        o.order_date,
+        os.status_name AS order_status,
+        u.user_id,
+        u.first_name || ' ' || u.last_name AS customer_name,
+        u.email AS customer_email,
+        u.phone AS customer_phone,
+        o.delivery_address,
+        o.delivery_notes,
+        dm.name AS delivery_method,
+        dm.base_cost AS delivery_cost,
+        o.total_amount,
+        o.tracking_number,
+        o.estimated_delivery_date,
+        o.actual_delivery_date,
+        da.agent_id,
+        (SELECT first_name || ' ' || last_name FROM users WHERE user_id = da.user_id) AS delivery_agent_name,
+        da.vehicle_type,
+        da.license_number,
+        oa.assigned_at,
+        oa.completed_at,
+        oa.notes AS assignment_notes,
+        ds.slot_date,
+        ds.slot_time,
+        dc.customer_confirmed,
+        dc.agent_confirmed,
+        dc.confirmed_date
+    FROM 
+        orders o
+    JOIN 
+        users u ON o.user_id = u.user_id
+    JOIN 
+        order_statuses os ON o.status_id = os.status_id
+    JOIN 
+        delivery_methods dm ON o.delivery_method_id = dm.method_id
+    LEFT JOIN 
+        order_assignments oa ON o.order_id = oa.order_id
+    LEFT JOIN 
+        delivery_agents da ON oa.agent_id = da.agent_id
+    LEFT JOIN 
+        delivery_slots ds ON o.order_id = ds.order_id
+    LEFT JOIN 
+        delivery_confirmations dc ON o.order_id = dc.order_id
+    WHERE 
+        o.order_id = p_order_id;
+    
+    -- Get order items
+    OPEN p_order_items FOR
+    SELECT 
+        oi.order_item_id,
+        oi.plant_id,
+        p.name AS plant_name,
+        oi.size_id,
+        ps.size_name,
+        oi.quantity,
+        oi.unit_price,
+        oi.discount_applied,
+        (oi.quantity * oi.unit_price * (1 - oi.discount_applied/100)) AS item_total,
+        pi.image_url AS plant_image
+    FROM 
+        order_items oi
+    JOIN 
+        plants p ON oi.plant_id = p.plant_id
+    LEFT JOIN 
+        plant_sizes ps ON oi.size_id = ps.size_id
+    LEFT JOIN 
+        plant_images pi ON p.plant_id = pi.plant_id AND pi.is_primary = 1
+    WHERE 
+        oi.order_id = p_order_id
+    ORDER BY 
+        oi.order_item_id;
+END;
+/
+
+
+-- Procedure to apply discount
+
+CREATE OR REPLACE PROCEDURE apply_discount (
+    p_discount_type_id IN NUMBER,
+    p_discount_value IN NUMBER,
+    p_is_percentage IN NUMBER,
+    p_start_date IN TIMESTAMP,
+    p_end_date IN TIMESTAMP,
+    p_category_id IN NUMBER DEFAULT NULL,
+    p_plant_id IN NUMBER DEFAULT NULL
+) AS
+    v_discount_id NUMBER;
+    v_discount_type_name VARCHAR2(50);
+BEGIN
+    -- Validate inputs
+    IF p_discount_type_id IS NULL OR p_discount_value IS NULL OR p_start_date IS NULL OR p_end_date IS NULL THEN
+        RAISE_APPLICATION_ERROR(-20012, 'Required discount parameters cannot be null');
+    END IF;
+    
+    -- Check if plant-wise discount requires plant_id
+    SELECT name INTO v_discount_type_name 
+    FROM discount_types 
+    WHERE discount_type_id = p_discount_type_id;
+    
+    IF v_discount_type_name = 'Plant-specific' AND p_plant_id IS NULL THEN
+        RAISE_APPLICATION_ERROR(-20013, 'Plant-specific discount requires a plant ID');
+    END IF;
+    
+    IF v_discount_type_name = 'Category' AND p_category_id IS NULL THEN
+        RAISE_APPLICATION_ERROR(-20014, 'Category discount requires a category ID');
+    END IF;
+    
+    -- Create discount
+    INSERT INTO discounts (discount_type_id, name, description, discount_value, is_percentage, start_date, end_date)
+    VALUES (
+        p_discount_type_id,
+        (SELECT name FROM discount_types WHERE discount_type_id = p_discount_type_id) || ' Discount',
+        'Applied discount',
+        p_discount_value,
+        p_is_percentage,
+        p_start_date,
+        p_end_date
+    ) RETURNING discount_id INTO v_discount_id;
+    
+    -- Apply discount to plants or categories
+    IF v_discount_type_name = 'Plant-specific' THEN
+        INSERT INTO plant_discounts (plant_id, discount_id)
+        VALUES (p_plant_id, v_discount_id);
+    ELSIF v_discount_type_name = 'Category' THEN
+        INSERT INTO plant_discounts (category_id, discount_id)
+        VALUES (p_category_id, v_discount_id);
+    ELSE
+        -- For seasonal, festive, special discounts - apply to all plants
+        INSERT INTO plant_discounts (discount_id)
+        SELECT v_discount_id FROM dual;
+    END IF;
+    
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
+END;
+/
+
+-- 8. Trigger to log user activities
+CREATE OR REPLACE TRIGGER trg_log_user_activity
+AFTER LOGON ON DATABASE
+BEGIN
+    INSERT INTO activity_log (user_id, activity_type, activity_details, ip_address)
+    VALUES (SYS_CONTEXT('USERENV', 'SESSION_USERID'), 
+            'LOGIN', 
+            'User logged in to the system',
+            SYS_CONTEXT('USERENV', 'IP_ADDRESS'));
+EXCEPTION
+    WHEN OTHERS THEN
+        NULL; -- Prevent login failures due to logging issues
+END;
+/
+
+-- 9. Trigger to detect low stock and create alerts
+CREATE OR REPLACE TRIGGER trg_check_low_stock
+AFTER UPDATE OF stock_quantity ON plants
+FOR EACH ROW
+WHEN (NEW.stock_quantity < 10 AND OLD.stock_quantity >= 10)
+DECLARE
+    v_alert_exists NUMBER;
+BEGIN
+    -- Check if an unresolved alert already exists for this plant
+    SELECT COUNT(*) INTO v_alert_exists
+    FROM low_stock_alerts
+    WHERE plant_id = :NEW.plant_id AND is_resolved = 0;
+    
+    -- Create a new alert if none exists
+    IF v_alert_exists = 0 THEN
+        INSERT INTO low_stock_alerts (plant_id, current_stock, threshold)
+        VALUES (:NEW.plant_id, :NEW.stock_quantity, 10);
+    END IF;
+END;
+/
+
+-- 10. Trigger to resolve low stock alerts when stock is replenished
+CREATE OR REPLACE TRIGGER trg_resolve_low_stock
+AFTER UPDATE OF stock_quantity ON plants
+FOR EACH ROW
+WHEN (NEW.stock_quantity >= 10 AND OLD.stock_quantity < 10)
+BEGIN
+    -- Resolve any unresolved alerts for this plant
+    UPDATE low_stock_alerts
+    SET is_resolved = 1, resolved_date = SYSTIMESTAMP
+    WHERE plant_id = :NEW.plant_id AND is_resolved = 0;
+END;
+/
+
+-- 11. View for admin dashboard with comprehensive order information
+CREATE OR REPLACE VIEW vw_admin_order_overview AS
+SELECT 
+    o.order_id,
+    o.order_number,
+    o.order_date,
+    os.status_name AS order_status,
+    u.user_id,
+    u.first_name || ' ' || u.last_name AS customer_name,
+    u.email AS customer_email,
+    o.total_amount,
+    dm.name AS delivery_method,
+    o.estimated_delivery_date,
+    o.actual_delivery_date,
+    da.agent_id,
+    (SELECT first_name || ' ' || last_name FROM users WHERE user_id = da.user_id) AS delivery_agent,
+    da.vehicle_type,
+    oa.assigned_at,
+    oa.completed_at,
+    (SELECT COUNT(*) FROM order_items WHERE order_id = o.order_id) AS item_count,
+    (SELECT SUM(quantity) FROM order_items WHERE order_id = o.order_id) AS total_quantity
+FROM 
+    orders o
+JOIN 
+    users u ON o.user_id = u.user_id
+JOIN 
+    order_statuses os ON o.status_id = os.status_id
+JOIN 
+    delivery_methods dm ON o.delivery_method_id = dm.method_id
+LEFT JOIN 
+    order_assignments oa ON o.order_id = oa.order_id
+LEFT JOIN 
+    delivery_agents da ON oa.agent_id = da.agent_id
+ORDER BY 
+    o.order_date DESC;
+/
+
+-- 12. View for low stock alerts with plant details
+CREATE OR REPLACE VIEW vw_low_stock_alerts_details AS
+SELECT 
+    lsa.alert_id,
+    lsa.plant_id,
+    p.name AS plant_name,
+    lsa.current_stock,
+    lsa.threshold,
+    lsa.alert_date,
+    lsa.is_resolved,
+    lsa.resolved_date,
+    (SELECT LISTAGG(pc.name, ', ') WITHIN GROUP (ORDER BY pc.name)
+     FROM plant_category_mapping pcm
+     JOIN plant_categories pc ON pcm.category_id = pc.category_id
+     WHERE pcm.plant_id = p.plant_id) AS categories
+FROM 
+    low_stock_alerts lsa
+JOIN 
+    plants p ON lsa.plant_id = p.plant_id
+ORDER BY 
+    lsa.is_resolved, lsa.alert_date DESC;
+/
+
+-- 13. View for delivery agent performance
+CREATE OR REPLACE VIEW vw_delivery_agent_performance AS
+SELECT 
+    da.agent_id,
+    u.first_name || ' ' || u.last_name AS agent_name,
+    da.vehicle_type,
+    da.license_number,
+    COUNT(oa.assignment_id) AS total_assignments,
+    SUM(CASE WHEN os.status_name = 'Delivered' THEN 1 ELSE 0 END) AS successful_deliveries,
+    SUM(CASE WHEN os.status_name = 'Cancelled' THEN 1 ELSE 0 END) AS cancelled_deliveries,
+    AVG(CASE WHEN os.status_name = 'Delivered' THEN o.total_amount ELSE NULL END) AS avg_order_value,
+    MIN(oa.assigned_at) AS first_assignment,
+    MAX(oa.assigned_at) AS last_assignment
+FROM 
+    delivery_agents da
+JOIN 
+    users u ON da.user_id = u.user_id
+LEFT JOIN 
+    order_assignments oa ON da.agent_id = oa.agent_id
+LEFT JOIN 
+    orders o ON oa.order_id = o.order_id
+LEFT JOIN 
+    order_statuses os ON o.status_id = os.status_id
+WHERE 
+    da.is_active = 1
+GROUP BY 
+    da.agent_id, u.first_name, u.last_name, da.vehicle_type, da.license_number
+ORDER BY 
+    successful_deliveries DESC;
+/
+
+-- Example usage of the procedures:
+/*
+DECLARE
+    v_total_customers NUMBER;
+    v_total_agents NUMBER;
+    v_total_sellers NUMBER;
+    v_total_revenue NUMBER;
+    v_pending_orders NUMBER;
+    v_low_stock_alerts NUMBER;
+BEGIN
+    get_admin_dashboard_stats(
+        v_total_customers, v_total_agents, v_total_sellers,
+        v_total_revenue, v_pending_orders, v_low_stock_alerts
+    );
+    
+    DBMS_OUTPUT.PUT_LINE('Total Customers: ' || v_total_customers);
+    DBMS_OUTPUT.PUT_LINE('Total Delivery Agents: ' || v_total_agents);
+    DBMS_OUTPUT.PUT_LINE('Total Sellers: ' || v_total_sellers);
+    DBMS_OUTPUT.PUT_LINE('Total Revenue: ' || v_total_revenue);
+    DBMS_OUTPUT.PUT_LINE('Pending Orders: ' || v_pending_orders);
+    DBMS_OUTPUT.PUT_LINE('Low Stock Alerts: ' || v_low_stock_alerts);
+END;
+/
+*/
 
 -- Delivery agent procedures
 
@@ -2807,9 +3201,6 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('Test 3: ' || v_status);
 END;
 /
-
-
-
 
 
 
