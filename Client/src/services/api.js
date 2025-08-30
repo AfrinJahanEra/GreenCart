@@ -23,22 +23,53 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor to handle common errors
+// src/services/api.js - Add response interceptor for error handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // You can add any response transformation here
+    return response;
+  },
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('authToken');
       localStorage.removeItem('userData');
       window.location.href = '/login';
     }
+    
+    // Enhanced error handling
+    if (error.response?.data) {
+      // Pass through the error data from backend
+      return Promise.reject(error);
+    }
+    
     return Promise.reject(error);
   }
 );
 
+// Add to your existing authAPI object in src/services/api.js
 export const authAPI = {
   login: (credentials) => api.post('/accounts/login/', credentials),
   signup: (userData) => api.post('/accounts/signup/', userData),
+  
+  // Add these profile functions
+  getProfile: (userId) => api.get(`/user/profile/${userId}/`),
+  updateProfile: (requestorId, userId, formData) => {
+    // Handle both JSON and FormData
+    const config = {};
+    if (formData instanceof FormData) {
+      config.headers = {
+        'Content-Type': 'multipart/form-data',
+      };
+    }
+    return api.post(`/user/update/${requestorId}/${userId}/`, formData, config);
+  },
+  deleteAccount: (requestorId, userId) => 
+    api.post(`/user/delete/${requestorId}/${userId}/`),
+  
+  // Utility functions
+  getUserByEmail: (email) => 
+    api.post('/user/by-email/', { email }),
+  getAllUsers: () => api.get('/user/all/'),
 };
 
 export const homeAPI = {
@@ -56,8 +87,7 @@ export const plantCollectionAPI = {
 export const plantDetailAPI = {
   getPlantDetails: (plantId) => api.get(`/plant_detail/plant/${plantId}/`),
   addToCart: (cartData) => api.post('/plant_detail/cart/add/', cartData),
-  getReviews: (plantId, limit = 50, offset = 0) => 
-    api.get(`/plant_detail/reviews/${plantId}/?limit=${limit}&offset=${offset}`),
+  getReviews: (plantId) => api.get(`/plant_detail/reviews/${plantId}/`),
   addReview: (plantId, userId, reviewData) => 
     api.post(`/plant_detail/review/add/${plantId}/${userId}/`, reviewData),
   deleteReview: (requestorId, reviewId) => 
@@ -76,6 +106,89 @@ export const adminAPI = {
   getOrderOverview: () => api.get('/admin_dashboard/order-overview/'),
   getLowStockDetails: () => api.get('/admin_dashboard/low-stock-details/'),
   getDeliveryAgentPerformance: () => api.get('/admin_dashboard/delivery-agent-performance/'),
+};
+
+export const sellerAPI = {
+  getSellerStats: (sellerId) => api.get(`/seller/seller/${sellerId}/stats/`),
+  getRecentSales: (sellerId) => api.get(`/seller/seller/${sellerId}/recent-sales/`),
+  getLowStockPlants: (sellerId) => api.get(`/seller/seller/${sellerId}/low-stock/`),
+  getSellerPlants: (sellerId) => api.get(`/seller/${sellerId}/plants/`),
+  getSalesRecords: (sellerId) => api.get(`/seller/seller/${sellerId}/sales/`),
+  addPlant: (plantData) => api.post('/seller/plants/add/', plantData),
+  updatePlant: (plantId, plantData) => api.put(`/seller/plants/${plantId}/update/`, plantData),
+  getPlantDetails: (plantId) => api.get(`/seller/plants/${plantId}/`),
+  uploadImages: (formData) => {
+    const config = {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      }
+    };
+    return api.post('/seller/plants/upload-images/', formData, config);
+  },
+  getCategories: () => api.get('/categories/'),
+};
+
+// src/services/api.js - Add delivery agent API functions
+export const deliveryAgentAPI = {
+  getDashboard: (agentId) => api.get(`/delivery_agent/dashboard/${agentId}/`),
+  markDeliveryCompleted: (data) => api.post('/delivery_agent/mark-delivered/', data),
+  getAssignmentCount: (agentId, status) => 
+    api.get(`/delivery_agent/assignment-count/${agentId}/?status=${status || ''}`),
+  getMonthlyEarnings: (agentId, year) => 
+    api.get(`/delivery_agent/monthly-earnings/${agentId}/?year=${year || ''}`),
+};
+
+
+
+
+export const customerOrdersAPI = {
+  // Get all customer orders
+  getCustomerOrders: (userId, status = null) => {
+    const url = status 
+      ? `/order/orders/${userId}/?status=${status}`
+      : `/order/orders/${userId}/`;
+    return api.get(url);
+  },
+
+  // Get pending confirmation orders
+  getPendingConfirmationOrders: (userId) => 
+    api.get(`/order/pending-confirmation/${userId}/`),
+
+  // Get completed orders ready for review
+  getCompletedOrdersForReview: (userId) => 
+    api.get(`/order/completed-for-review/${userId}/`),
+
+  // Confirm delivery
+  confirmDelivery: (orderId, userId) => 
+    api.post('/order/confirm-delivery/', { order_id: orderId, user_id: userId }),
+
+  // Add review
+  addReview: (reviewData) => 
+    api.post('/order/add-review/', reviewData),
+
+  // Get order details
+  getOrderDetails: (orderId, userId) => 
+    api.get(`/order/order-details/${orderId}/?user_id=${userId}`),
+
+  // Get customer order statistics
+  getCustomerOrderStats: (userId) => 
+    api.get(`/order/stats/${userId}/`),
+
+  createOrder: (orderData) => api.post('/order/create-order/', orderData),
+  getOrder: (orderId) => api.get(`/order/order-details/${orderId}/`),
+  getDeliveryMethods: () => api.get('/order/delivery-methods/'),
+};
+
+// Add these to your existing api.js file
+
+
+
+export const cartAPI = {
+  getCart: (userId) => api.get(`/cart/${userId}/`),
+  addToCart: (cartData) => api.post('/cart/add/', cartData),
+  updateCartItem: (cartId, quantity) => api.put(`/cart/${cartId}/`, { quantity }),
+  removeFromCart: (cartId) => api.delete(`/cart/${cartId}/`),
+  clearCart: (userId) => api.delete(`/cart/clear/${userId}/`),
 };
 
 export const addReview = (plantId, userId, reviewData) => {

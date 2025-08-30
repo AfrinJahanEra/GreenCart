@@ -97,60 +97,100 @@ def login(request):
             # Hash password to match the stored hash
             password_hash = hashlib.sha256(password.encode()).hexdigest()
             
-            # Call the PL/SQL function
+            # Simple direct database check (no PL/SQL function needed)
             with connection.cursor() as cursor:
+                # Check if user exists and credentials match
                 cursor.execute("""
-                    SELECT user_login_func(:email, :password, :ip_address) FROM dual
-                """, {
-                    'email': email,
-                    'password': password_hash,
-                    'ip_address': ip_address
-                })
+                    SELECT u.user_id, u.username, u.email, u.first_name, u.last_name, 
+                           r.role_name, u.phone, u.address, u.is_active, u.password_hash
+                    FROM users u
+                    JOIN user_roles ur ON u.user_id = ur.user_id
+                    JOIN roles r ON ur.role_id = r.role_id
+                    WHERE u.email = :email
+                """, {'email': email})
                 
-                result = cursor.fetchone()[0]
+                user_data = cursor.fetchone()
                 
-                if result == 'LOGIN SUCCESSFUL':
-                    # Get user details
+                if not user_data:
+                    # Log failed login attempt
                     cursor.execute("""
-                        SELECT u.user_id, u.username, u.email, u.first_name, u.last_name, 
-                               r.role_name, u.phone, u.address
-                        FROM users u
-                        JOIN user_roles ur ON u.user_id = ur.user_id
-                        JOIN roles r ON ur.role_id = r.role_id
-                        WHERE u.email = :email
-                    """, {'email': email})
+                        INSERT INTO activity_log (activity_type, activity_details, ip_address)
+                        VALUES ('LOGIN_FAILED', 'User not found: ' || :email, :ip_address)
+                    """, {'email': email, 'ip_address': ip_address})
                     
-                    user_data = cursor.fetchone()
+                    return JsonResponse({
+                        'success': False,
+                        'message': 'USER NOT FOUND'
+                    }, status=401)
+                
+                # Extract user data
+                user_id, username, user_email, first_name, last_name, role, phone, address, is_active, stored_hash = user_data
+                
+                # Check if account is active
+                if is_active == 0:
+                    cursor.execute("""
+                        INSERT INTO activity_log (user_id, activity_type, activity_details, ip_address)
+                        VALUES (:user_id, 'LOGIN_FAILED', 'Account inactive', :ip_address)
+                    """, {'user_id': user_id, 'ip_address': ip_address})
                     
-                    if user_data:
-                        user_info = {
-                            'user_id': user_data[0],
-                            'username': user_data[1],
-                            'email': user_data[2],
-                            'first_name': user_data[3],
-                            'last_name': user_data[4],
-                            'role': user_data[5],
-                            'phone': user_data[6] or '',
-                            'address': user_data[7] or ''
-                        }
-                        
-                        return JsonResponse({
-                            'success': True,
-                            'message': 'Login successful',
-                            'user': user_info
-                        })
-                    else:
-                        return JsonResponse({
-                            'success': False,
-                            'message': 'User not found after successful login'
-                        }, status=500)
+                    return JsonResponse({
+                        'success': False,
+                        'message': 'ACCOUNT INACTIVE'
+                    }, status=401)
+                
+                # Check password
+                if stored_hash != password_hash:
+                    cursor.execute("""
+                        INSERT INTO activity_log (user_id, activity_type, activity_details, ip_address)
+                        VALUES (:user_id, 'LOGIN_FAILED', 'Invalid password', :ip_address)
+                    """, {'user_id': user_id, 'ip_address': ip_address})
+                    
+                    return JsonResponse({
+                        'success': False,
+                        'message': 'INVALID CREDENTIALS'
+                    }, status=401)
+                
+                # Successful login - update last login and log activity
+                cursor.execute("""
+                    UPDATE users 
+                    SET last_login = SYSTIMESTAMP 
+                    WHERE user_id = :user_id
+                """, {'user_id': user_id})
+                
+                cursor.execute("""
+                    INSERT INTO activity_log (user_id, activity_type, activity_details, ip_address)
+                    VALUES (:user_id, 'LOGIN', 'User logged in successfully', :ip_address)
+                """, {'user_id': user_id, 'ip_address': ip_address})
+                
+                # Prepare user info
+                user_info = {
+                    'user_id': user_id,
+                    'username': username,
+                    'email': user_email,
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'role': role,
+                    'phone': phone or '',
+                    'address': address or ''
+                }
                 
                 return JsonResponse({
-                    'success': False,
-                    'message': result
-                }, status=401)
+                    'success': True,
+                    'message': 'Login successful',
+                    'user': user_info
+                })
                 
         except Exception as e:
+            # Log the error
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO activity_log (activity_type, activity_details, ip_address)
+                        VALUES ('LOGIN_ERROR', 'Server error: ' || :error, :ip_address)
+                    """, {'error': str(e), 'ip_address': get_client_ip(request)})
+            except:
+                pass
+            
             return JsonResponse({
                 'success': False,
                 'message': f'Login error: {str(e)}'

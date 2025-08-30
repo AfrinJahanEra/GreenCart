@@ -848,11 +848,12 @@ END;
 /
 
 
-
+select * from plants;
 -- plant details page 
 
 -- Procedure to fetch all plant details for the plant details page
 
+-- Fix get_plant_details procedure (remove JSON_OBJECT which causes issues)
 CREATE OR REPLACE PROCEDURE get_plant_details (
     p_plant_id IN NUMBER,
     p_cursor OUT SYS_REFCURSOR
@@ -868,31 +869,22 @@ BEGIN
       pi.image_url AS primary_image,
       (SELECT LISTAGG(pi2.image_url, ',') WITHIN GROUP (ORDER BY pi2.image_id)
        FROM plant_images pi2 WHERE pi2.plant_id = p.plant_id) AS image_urls,
-      (SELECT LISTAGG(ps.size_name || ':' || ps.price_adjustment, ',') WITHIN GROUP (ORDER BY ps.size_id)
+      (SELECT LISTAGG(ps.size_id || ':' || ps.size_name || ':' || ps.price_adjustment, '|') WITHIN GROUP (ORDER BY ps.size_id)
        FROM plant_sizes ps WHERE ps.plant_id = p.plant_id) AS sizes,
-      (SELECT LISTAGG(pf.feature_text, ',') WITHIN GROUP (ORDER BY pf.feature_id)
+      (SELECT LISTAGG(pf.feature_text, '|') WITHIN GROUP (ORDER BY pf.feature_id)
        FROM plant_features pf WHERE pf.plant_id = p.plant_id) AS features,
-      (SELECT LISTAGG(pct.tip_text, ',') WITHIN GROUP (ORDER BY pct.tip_id)
+      (SELECT LISTAGG(pct.tip_text, '|') WITHIN GROUP (ORDER BY pct.tip_id)
        FROM plant_care_tips pct WHERE pct.plant_id = p.plant_id) AS care_tips,
-      AVG(r.rating) AS avg_rating,
-      COUNT(r.review_id) AS review_count,
-      JSON_ARRAYAGG(
-          JSON_OBJECT(
-              'review_id' VALUE r.review_id,
-              'text' VALUE DBMS_LOB.SUBSTR(r.review_text, 4000, 1),
-              'author' VALUE u.first_name || ' ' || u.last_name,
-              'rating' VALUE r.rating,
-              'date' VALUE TO_CHAR(r.review_date, 'YYYY-MM-DD')
-          ) RETURNING CLOB
-      ) AS reviews
+      NVL(AVG(r.rating), 0) AS avg_rating,
+      COUNT(r.review_id) AS review_count
   FROM plants p
   LEFT JOIN plant_images pi ON p.plant_id = pi.plant_id AND pi.is_primary = 1
   LEFT JOIN reviews r ON p.plant_id = r.plant_id
-  LEFT JOIN users u ON r.user_id = u.user_id
   WHERE p.plant_id = p_plant_id AND p.is_active = 1
   GROUP BY p.plant_id, p.name, DBMS_LOB.SUBSTR(p.description, 4000, 1), p.base_price, p.stock_quantity, pi.image_url;
 END;
 /
+
 
 
 
@@ -969,140 +961,25 @@ EXCEPTION
 END;
 /
 
--- Procedure to fetch reviews for a plant with reviewer info
-
-
-CREATE OR REPLACE PROCEDURE add_review (
-    p_user_id IN NUMBER,
+-- Create a separate procedure for reviews
+CREATE OR REPLACE PROCEDURE get_plant_reviews (
     p_plant_id IN NUMBER,
-    p_order_id IN NUMBER,
-    p_rating IN NUMBER,
-    p_review_text IN CLOB
-) AS
-    v_order_status VARCHAR2(50);
-    v_customer_id NUMBER;
-    v_plant_in_order NUMBER;
-    v_both_confirmed NUMBER;
-    v_review_id NUMBER;
-BEGIN
-    -- Validate inputs
-    IF p_user_id IS NULL OR p_plant_id IS NULL OR p_order_id IS NULL OR p_rating IS NULL THEN
-        RAISE_APPLICATION_ERROR(-20020, 'User ID, Plant ID, Order ID, and Rating cannot be null');
-    END IF;
-
-    IF p_rating NOT BETWEEN 1 AND 5 THEN
-        RAISE_APPLICATION_ERROR(-20021, 'Rating must be between 1 and 5');
-    END IF;
-
-    -- Check if order is delivered
-    BEGIN
-        SELECT os.status_name, o.user_id
-        INTO v_order_status, v_customer_id
-        FROM orders o
-        JOIN order_statuses os ON o.status_id = os.status_id
-        WHERE o.order_id = p_order_id;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20022, 'Order not found');
-    END;
-
-    IF v_order_status != 'Delivered' THEN
-        RAISE_APPLICATION_ERROR(-20023, 'Order is not delivered');
-    END IF;
-
-    -- Verify both customer and agent confirmed delivery
-    BEGIN
-        SELECT CASE 
-                 WHEN customer_confirmed = 1 AND agent_confirmed = 1 THEN 1 
-                 ELSE 0 
-               END
-        INTO v_both_confirmed
-        FROM delivery_confirmations
-        WHERE order_id = p_order_id;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RAISE_APPLICATION_ERROR(-20024, 'Delivery confirmation not found for order');
-    END;
-
-    IF v_both_confirmed = 0 THEN
-        RAISE_APPLICATION_ERROR(-20025, 'Order delivery not fully confirmed by customer and agent');
-    END IF;
-
-    -- Verify user is the customer who placed the order
-    IF p_user_id != v_customer_id THEN
-        RAISE_APPLICATION_ERROR(-20026, 'User is not authorized to review this order');
-    END IF;
-
-    -- Check if plant_id is part of the order
-    BEGIN
-        SELECT COUNT(*)
-        INTO v_plant_in_order
-        FROM order_items
-        WHERE order_id = p_order_id
-        AND plant_id = p_plant_id;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            v_plant_in_order := 0;
-    END;
-
-    IF v_plant_in_order = 0 THEN
-        RAISE_APPLICATION_ERROR(-20027, 'Plant not found in this order');
-    END IF;
-
-    -- Check for existing review (to prevent duplicates)
-    SELECT COUNT(*)
-    INTO v_plant_in_order
-    FROM reviews
-    WHERE user_id = p_user_id
-    AND plant_id = p_plant_id
-    AND order_id = p_order_id;
-
-    IF v_plant_in_order > 0 THEN
-        RAISE_APPLICATION_ERROR(-20028, 'Review already exists for this plant, user, and order');
-    END IF;
-
-    -- Generate review_id
-    SELECT review_id_seq.NEXTVAL INTO v_review_id FROM dual;
-
-    -- Insert the review
-    INSERT INTO reviews (review_id, user_id, plant_id, order_id, rating, review_text, review_date, is_approved)
-    VALUES (v_review_id, p_user_id, p_plant_id, p_order_id, p_rating, p_review_text, SYSTIMESTAMP, 1);
-
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
-END;
-/
-
-
-CREATE OR REPLACE PROCEDURE get_reviews_for_plant (
-    p_plant_id            IN NUMBER,
-    p_include_unapproved  IN NUMBER DEFAULT 0, -- 0 = only approved, 1 = include all
-    p_limit               IN NUMBER DEFAULT 50,
-    p_offset              IN NUMBER DEFAULT 0,
-    p_cursor              OUT SYS_REFCURSOR
+    p_cursor OUT SYS_REFCURSOR
 ) AS
 BEGIN
-    OPEN p_cursor FOR
-    SELECT
-        r.review_id,
-        r.user_id,
-        u.first_name || ' ' || u.last_name AS reviewer_name,
-        r.rating,
-        DBMS_LOB.SUBSTR(r.review_text, 4000, 1) AS review_text,
-        TO_CHAR(r.review_date, 'YYYY-MM-DD HH24:MI:SS') AS review_date,
-        r.is_approved
-    FROM reviews r
-    LEFT JOIN users u ON r.user_id = u.user_id
-    WHERE r.plant_id = p_plant_id
-      AND (p_include_unapproved = 1 OR r.is_approved = 1)
-    ORDER BY r.review_date DESC
-    OFFSET p_offset ROWS FETCH NEXT p_limit ROWS ONLY;
+  OPEN p_cursor FOR
+  SELECT 
+      r.review_id,
+      u.first_name || ' ' || u.last_name AS author,
+      r.rating,
+      DBMS_LOB.SUBSTR(r.review_text, 1000, 1) AS review_text,
+      TO_CHAR(r.review_date, 'YYYY-MM-DD') AS review_date
+  FROM reviews r
+  JOIN users u ON r.user_id = u.user_id
+  WHERE r.plant_id = p_plant_id AND r.is_approved = 1
+  ORDER BY r.review_date DESC;
 END;
 /
-
 
 
 --  Deletes a review only if requestor is the review owner or admin.
@@ -1653,65 +1530,14 @@ END;
 /
 
 
--- Procedure to get order details with delivery info
-
-CREATE OR REPLACE PROCEDURE get_order_details_with_delivery (
-    p_order_id IN NUMBER,
-    p_cursor OUT SYS_REFCURSOR
-) AS
-BEGIN
-    OPEN p_cursor FOR
-    SELECT 
-        o.order_id,
-        o.order_number,
-        TO_CHAR(o.order_date, 'YYYY-MM-DD HH24:MI:SS') AS order_date,
-        os.status_name AS order_status,
-        o.total_amount,
-        dm.name AS delivery_method,
-        dm.base_cost AS delivery_cost,
-        o.delivery_address,
-        o.delivery_notes,
-        TO_CHAR(o.estimated_delivery_date, 'YYYY-MM-DD') AS estimated_delivery,
-        u.user_id AS customer_id,
-        u.first_name || ' ' || u.last_name AS customer_name,
-        u.email AS customer_email,
-        u.phone AS customer_phone,
-        da.agent_id,
-        du.first_name || ' ' || du.last_name AS delivery_agent_name,
-        du.phone AS delivery_agent_phone,
-        da.vehicle_type,
-        (SELECT JSON_ARRAYAGG(
-                    JSON_OBJECT(
-                        'plant_id' VALUE p.plant_id,
-                        'plant_name' VALUE p.name,
-                        'image_url' VALUE pi.image_url,
-                        'quantity' VALUE oi.quantity,
-                        'unit_price' VALUE oi.unit_price,
-                        'size_name' VALUE ps.size_name,
-                        'subtotal' VALUE (oi.quantity * oi.unit_price)
-                    ) RETURNING CLOB
-                )
-         FROM order_items oi
-         JOIN plants p ON oi.plant_id = p.plant_id
-         LEFT JOIN plant_images pi ON p.plant_id = pi.plant_id AND pi.is_primary = 1
-         LEFT JOIN plant_sizes ps ON oi.size_id = ps.size_id
-         WHERE oi.order_id = o.order_id) AS items
-    FROM orders o
-    JOIN order_statuses os ON o.status_id = os.status_id
-    JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
-    JOIN users u ON o.user_id = u.user_id
-    LEFT JOIN order_assignments oa ON o.order_id = oa.order_id
-    LEFT JOIN delivery_agents da ON oa.agent_id = da.agent_id
-    LEFT JOIN users du ON da.user_id = du.user_id
-    WHERE o.order_id = p_order_id;
-END;
-/
-
--- admin dashboard
--- Procedure to get all orders for a user
 
 
-CREATE OR REPLACE PROCEDURE get_user_orders (
+-- order page 
+
+
+
+-- 1. Procedure to get all orders for a customer with detailed information
+CREATE OR REPLACE PROCEDURE get_customer_orders (
     p_user_id IN NUMBER,
     p_status_name IN VARCHAR2 DEFAULT NULL,
     p_cursor OUT SYS_REFCURSOR
@@ -1721,13 +1547,23 @@ BEGIN
     SELECT 
         o.order_id,
         o.order_number,
-        TO_CHAR(o.order_date, 'YYYY-MM-DD HH24:MI:SS') AS order_date,
+        o.order_date,
         os.status_name AS order_status,
         o.total_amount,
         dm.name AS delivery_method,
         o.delivery_address,
-        TO_CHAR(o.estimated_delivery_date, 'YYYY-MM-DD') AS estimated_delivery,
+        o.estimated_delivery_date,
+        o.actual_delivery_date,
+        o.tracking_number,
         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id) AS item_count,
+        (SELECT LISTAGG(p.name || ' (x' || oi.quantity || ')', ', ') 
+         WITHIN GROUP (ORDER BY oi.order_item_id)
+         FROM order_items oi 
+         JOIN plants p ON oi.plant_id = p.plant_id
+         WHERE oi.order_id = o.order_id) AS items_summary,
+        NVL(dc.customer_confirmed, 0) AS customer_confirmed,
+        NVL(dc.agent_confirmed, 0) AS agent_confirmed,
+        dc.confirmed_date,
         (SELECT pi.image_url 
          FROM order_items oi 
          JOIN plants p ON oi.plant_id = p.plant_id
@@ -1736,68 +1572,387 @@ BEGIN
     FROM orders o
     JOIN order_statuses os ON o.status_id = os.status_id
     JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
+    LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
     WHERE o.user_id = p_user_id
     AND (p_status_name IS NULL OR os.status_name = p_status_name)
     ORDER BY o.order_date DESC;
 END;
 /
 
-
--- delivery confirmation page
-
--- Procedure for delivery confirmation
-
-CREATE OR REPLACE PROCEDURE confirm_delivery (
-    p_order_id IN NUMBER,
-    p_user_type IN VARCHAR2, -- 'customer' or 'agent'
-    p_user_id IN NUMBER
+-- 2. Procedure to get pending orders (waiting for customer confirmation)
+CREATE OR REPLACE PROCEDURE get_pending_confirmation_orders (
+    p_user_id IN NUMBER,
+    p_cursor OUT SYS_REFCURSOR
 ) AS
-    v_confirmation_id NUMBER;
-    v_customer_confirmed NUMBER(1);
-    v_agent_confirmed NUMBER(1);
-    v_agent_id NUMBER;
-    v_customer_id NUMBER;
 BEGIN
-
-    SELECT confirmation_id, customer_confirmed, agent_confirmed, agent_id, user_id
-    INTO v_confirmation_id, v_customer_confirmed, v_agent_confirmed, v_agent_id, v_customer_id
-    FROM delivery_confirmations
-    WHERE order_id = p_order_id;
-    
-    -- Update confirmation based on user type
-    IF p_user_type = 'customer' AND p_user_id = v_customer_id THEN
-        UPDATE delivery_confirmations
-        SET customer_confirmed = 1,
-            confirmed_date = CASE WHEN v_agent_confirmed = 1 THEN SYSTIMESTAMP ELSE confirmed_date END
-        WHERE order_id = p_order_id;
-    ELSIF p_user_type = 'agent' AND p_user_id = v_agent_id THEN
-        UPDATE delivery_confirmations
-        SET agent_confirmed = 1,
-            confirmed_date = CASE WHEN v_customer_confirmed = 1 THEN SYSTIMESTAMP ELSE confirmed_date END
-        WHERE order_id = p_order_id;
-    ELSE
-        RAISE_APPLICATION_ERROR(-20017, 'Invalid user type or user not authorized for this order');
-    END IF;
-    
-    -- If both confirmed, update order status to Delivered
-    IF (p_user_type = 'customer' AND v_agent_confirmed = 1) OR 
-       (p_user_type = 'agent' AND v_customer_confirmed = 1) THEN
-        UPDATE orders
-        SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
-            actual_delivery_date = SYSTIMESTAMP
-        WHERE order_id = p_order_id;
-    END IF;
-    
-    COMMIT;
-EXCEPTION
-    WHEN NO_DATA_FOUND THEN
-        RAISE_APPLICATION_ERROR(-20018, 'Delivery confirmation record not found for this order');
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
+    OPEN p_cursor FOR
+    SELECT 
+        o.order_id,
+        o.order_number,
+        o.order_date,
+        o.total_amount,
+        dm.name AS delivery_method,
+        o.delivery_address,
+        o.estimated_delivery_date,
+        o.actual_delivery_date,
+        da.agent_id,
+        ua.first_name || ' ' || ua.last_name AS delivery_agent_name,
+        ua.phone AS delivery_agent_phone,
+        da.vehicle_type,
+        dc.agent_confirmed,
+        dc.customer_confirmed,
+        dc.confirmed_date,
+        (SELECT LISTAGG(p.name || ' (x' || oi.quantity || ')', ', ') 
+         WITHIN GROUP (ORDER BY oi.order_item_id)
+         FROM order_items oi 
+         JOIN plants p ON oi.plant_id = p.plant_id
+         WHERE oi.order_id = o.order_id) AS items_summary
+    FROM orders o
+    JOIN order_statuses os ON o.status_id = os.status_id
+    JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
+    LEFT JOIN order_assignments oa ON o.order_id = oa.order_id
+    LEFT JOIN delivery_agents da ON oa.agent_id = da.agent_id
+    LEFT JOIN users ua ON da.user_id = ua.user_id
+    LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
+    WHERE o.user_id = p_user_id
+    AND os.status_name = 'Out for Delivery'
+    AND dc.agent_confirmed = 1
+    AND dc.customer_confirmed = 0
+    ORDER BY o.order_date DESC;
 END;
 /
-select * from orders;
+
+-- 3. Procedure to get completed orders (ready for review)
+CREATE OR REPLACE PROCEDURE get_completed_orders_for_review (
+    p_user_id IN NUMBER,
+    p_cursor OUT SYS_REFCURSOR
+) AS
+BEGIN
+    OPEN p_cursor FOR
+    SELECT 
+        o.order_id,
+        o.order_number,
+        o.order_date,
+        o.total_amount,
+        o.actual_delivery_date,
+        (SELECT LISTAGG(
+            p.plant_id || ':' || p.name || ':' || oi.quantity || ':' || 
+            NVL(ps.size_name, 'Standard') || ':' || 
+            CASE WHEN r.review_id IS NOT NULL THEN '1' ELSE '0' END, 
+            '|'
+        ) WITHIN GROUP (ORDER BY oi.order_item_id)
+         FROM order_items oi 
+         JOIN plants p ON oi.plant_id = p.plant_id
+         LEFT JOIN plant_sizes ps ON oi.size_id = ps.size_id
+         LEFT JOIN reviews r ON oi.plant_id = r.plant_id AND oi.order_id = r.order_id AND r.user_id = p_user_id
+         WHERE oi.order_id = o.order_id) AS items_with_review_status
+    FROM orders o
+    JOIN order_statuses os ON o.status_id = os.status_id
+    LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
+    WHERE o.user_id = p_user_id
+    AND os.status_name = 'Delivered'
+    AND dc.customer_confirmed = 1
+    AND dc.agent_confirmed = 1
+    ORDER BY o.actual_delivery_date DESC;
+END;
+/
+
+-- 4. Procedure for customer to confirm delivery
+CREATE OR REPLACE PROCEDURE customer_confirm_delivery (
+    p_order_id IN NUMBER,
+    p_user_id IN NUMBER,
+    p_success OUT NUMBER,
+    p_message OUT VARCHAR2
+) AS
+    v_order_exists NUMBER;
+    v_customer_id NUMBER;
+    v_status_name VARCHAR2(50);
+    v_agent_confirmed NUMBER;
+BEGIN
+    -- Check if order exists and belongs to user
+    SELECT COUNT(*), user_id
+    INTO v_order_exists, v_customer_id
+    FROM orders
+    WHERE order_id = p_order_id;
+
+    IF v_order_exists = 0 THEN
+        p_success := 0;
+        p_message := 'Order not found';
+        RETURN;
+    END IF;
+
+    IF v_customer_id != p_user_id THEN
+        p_success := 0;
+        p_message := 'Not authorized to confirm this delivery';
+        RETURN;
+    END IF;
+
+    -- Check order status
+    SELECT os.status_name
+    INTO v_status_name
+    FROM orders o
+    JOIN order_statuses os ON o.status_id = os.status_id
+    WHERE o.order_id = p_order_id;
+
+    IF v_status_name != 'Out for Delivery' THEN
+        p_success := 0;
+        p_message := 'Order is not out for delivery';
+        RETURN;
+    END IF;
+
+    -- Check if agent has confirmed
+    SELECT NVL(agent_confirmed, 0)
+    INTO v_agent_confirmed
+    FROM delivery_confirmations
+    WHERE order_id = p_order_id;
+
+    IF v_agent_confirmed = 0 THEN
+        p_success := 0;
+        p_message := 'Delivery agent has not confirmed delivery yet';
+        RETURN;
+    END IF;
+
+    -- Update customer confirmation
+    MERGE INTO delivery_confirmations dc
+    USING (SELECT p_order_id AS order_id, p_user_id AS user_id FROM dual) src
+    ON (dc.order_id = src.order_id)
+    WHEN MATCHED THEN
+        UPDATE SET 
+            customer_confirmed = 1,
+            confirmed_date = CASE WHEN agent_confirmed = 1 THEN SYSTIMESTAMP ELSE confirmed_date END
+    WHEN NOT MATCHED THEN
+        INSERT (order_id, user_id, agent_id, customer_confirmed)
+        VALUES (src.order_id, src.user_id, 
+               (SELECT agent_id FROM order_assignments WHERE order_id = p_order_id), 1);
+
+    -- If both confirmed, update order status to Delivered
+    UPDATE orders
+    SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
+        actual_delivery_date = SYSTIMESTAMP
+    WHERE order_id = p_order_id
+    AND EXISTS (
+        SELECT 1 FROM delivery_confirmations 
+        WHERE order_id = p_order_id 
+        AND customer_confirmed = 1 
+        AND agent_confirmed = 1
+    );
+
+    COMMIT;
+    p_success := 1;
+    p_message := 'Delivery confirmed successfully';
+
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        p_success := 0;
+        p_message := 'Error confirming delivery: ' || SQLERRM;
+END;
+/
+
+drop procedure add_review;
+
+-- 5. Enhanced add_review procedure with better validation
+CREATE OR REPLACE PROCEDURE add_review (
+    p_user_id IN NUMBER,
+    p_plant_id IN NUMBER,
+    p_order_id IN NUMBER,
+    p_rating IN NUMBER,
+    p_review_text IN CLOB DEFAULT NULL,
+    p_success OUT NUMBER,
+    p_message OUT VARCHAR2
+) AS
+    v_order_status VARCHAR2(50);
+    v_customer_id NUMBER;
+    v_plant_in_order NUMBER;
+    v_both_confirmed NUMBER;
+    v_review_id NUMBER;
+    v_existing_review NUMBER;
+BEGIN
+    -- Validate inputs
+    IF p_user_id IS NULL OR p_plant_id IS NULL OR p_order_id IS NULL OR p_rating IS NULL THEN
+        p_success := 0;
+        p_message := 'User ID, Plant ID, Order ID, and Rating cannot be null';
+        RETURN;
+    END IF;
+
+    IF p_rating NOT BETWEEN 1 AND 5 THEN
+        p_success := 0;
+        p_message := 'Rating must be between 1 and 5';
+        RETURN;
+    END IF;
+
+    -- Check if order exists and get status
+    BEGIN
+        SELECT os.status_name, o.user_id
+        INTO v_order_status, v_customer_id
+        FROM orders o
+        JOIN order_statuses os ON o.status_id = os.status_id
+        WHERE o.order_id = p_order_id;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            p_success := 0;
+            p_message := 'Order not found';
+            RETURN;
+    END;
+
+    -- Verify order is delivered
+    IF v_order_status != 'Delivered' THEN
+        p_success := 0;
+        p_message := 'Order is not delivered yet';
+        RETURN;
+    END IF;
+
+    -- Verify user is the customer
+    IF p_user_id != v_customer_id THEN
+        p_success := 0;
+        p_message := 'Not authorized to review this order';
+        RETURN;
+    END IF;
+
+    -- Check delivery confirmation
+    BEGIN
+        SELECT CASE 
+                 WHEN customer_confirmed = 1 AND agent_confirmed = 1 THEN 1 
+                 ELSE 0 
+               END
+        INTO v_both_confirmed
+        FROM delivery_confirmations
+        WHERE order_id = p_order_id;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            p_success := 0;
+            p_message := 'Delivery not confirmed for this order';
+            RETURN;
+    END;
+
+    IF v_both_confirmed = 0 THEN
+        p_success := 0;
+        p_message := 'Delivery not fully confirmed by both parties';
+        RETURN;
+    END IF;
+
+    -- Check if plant is in the order
+    SELECT COUNT(*)
+    INTO v_plant_in_order
+    FROM order_items
+    WHERE order_id = p_order_id
+    AND plant_id = p_plant_id;
+
+    IF v_plant_in_order = 0 THEN
+        p_success := 0;
+        p_message := 'Plant not found in this order';
+        RETURN;
+    END IF;
+
+    -- Check for existing review
+    SELECT COUNT(*)
+    INTO v_existing_review
+    FROM reviews
+    WHERE user_id = p_user_id
+    AND plant_id = p_plant_id
+    AND order_id = p_order_id;
+
+    IF v_existing_review > 0 THEN
+        p_success := 0;
+        p_message := 'You have already reviewed this plant from this order';
+        RETURN;
+    END IF;
+
+    -- Generate review_id and insert
+    SELECT review_id_seq.NEXTVAL INTO v_review_id FROM dual;
+
+    INSERT INTO reviews (review_id, user_id, plant_id, order_id, rating, review_text, review_date, is_approved)
+    VALUES (v_review_id, p_user_id, p_plant_id, p_order_id, p_rating, p_review_text, SYSTIMESTAMP, 1);
+
+    COMMIT;
+    p_success := 1;
+    p_message := 'Review added successfully';
+
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        p_success := 0;
+        p_message := 'Error adding review: ' || SQLERRM;
+END;
+/
+
+-- 6. Function to get order details with items
+-- Function to get order items with review status
+CREATE OR REPLACE FUNCTION get_order_items(p_order_id IN NUMBER, p_user_id IN NUMBER) RETURN SYS_REFCURSOR AS
+    v_cursor SYS_REFCURSOR;
+BEGIN
+    OPEN v_cursor FOR
+    SELECT 
+        oi.order_item_id,
+        oi.plant_id,
+        p.name AS plant_name,
+        pi.image_url,
+        oi.quantity,
+        oi.unit_price,
+        ps.size_id,
+        ps.size_name,
+        ps.price_adjustment,
+        (oi.quantity * oi.unit_price) AS subtotal,
+        CASE WHEN r.review_id IS NOT NULL THEN 1 ELSE 0 END AS has_review
+    FROM order_items oi
+    JOIN plants p ON oi.plant_id = p.plant_id
+    LEFT JOIN plant_images pi ON p.plant_id = pi.plant_id AND pi.is_primary = 1
+    LEFT JOIN plant_sizes ps ON oi.size_id = ps.size_id
+    LEFT JOIN reviews r ON oi.plant_id = r.plant_id AND oi.order_id = r.order_id AND r.user_id = p_user_id
+    WHERE oi.order_id = p_order_id
+    ORDER BY oi.order_item_id;
+    
+    RETURN v_cursor;
+END;
+/
+
+-- 7. Procedure to get customer order statistics
+CREATE OR REPLACE PROCEDURE get_customer_order_stats (
+    p_user_id IN NUMBER,
+    p_total_orders OUT NUMBER,
+    p_pending_orders OUT NUMBER,
+    p_delivered_orders OUT NUMBER,
+    p_total_spent OUT NUMBER
+) AS
+BEGIN
+    -- Total orders
+    SELECT COUNT(*)
+    INTO p_total_orders
+    FROM orders
+    WHERE user_id = p_user_id;
+
+    -- Pending orders (Processing, Shipped, Out for Delivery)
+    SELECT COUNT(*)
+    INTO p_pending_orders
+    FROM orders o
+    JOIN order_statuses os ON o.status_id = os.status_id
+    WHERE o.user_id = p_user_id
+    AND os.status_name IN ('Processing', 'Shipped', 'Out for Delivery');
+
+    -- Delivered orders
+    SELECT COUNT(*)
+    INTO p_delivered_orders
+    FROM orders o
+    JOIN order_statuses os ON o.status_id = os.status_id
+    WHERE o.user_id = p_user_id
+    AND os.status_name = 'Delivered';
+
+    -- Total spent
+    SELECT NVL(SUM(total_amount), 0)
+    INTO p_total_spent
+    FROM orders
+    WHERE user_id = p_user_id
+    AND order_id IN (
+        SELECT o.order_id
+        FROM orders o
+        JOIN order_statuses os ON o.status_id = os.status_id
+        WHERE os.status_name = 'Delivered'
+    );
+END;
+/
+
+
+
 -- Admin dashboard procedures
 
 -- 1. Procedure to show total users by role
@@ -2584,57 +2739,6 @@ END;
 /
 */
 
--- Delivery agent procedures
-
-CREATE OR REPLACE PROCEDURE get_delivery_agent_orders (
-    p_agent_id IN NUMBER,
-    p_status_name IN VARCHAR2 DEFAULT NULL,
-    p_order_count OUT NUMBER,
-    p_total_amount OUT NUMBER,
-    p_avg_items OUT NUMBER
-) AS
-BEGIN
-    SELECT 
-        COUNT(*),
-        NVL(SUM(o.total_amount), 0),
-        NVL(AVG((SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.order_id)), 0)
-    INTO p_order_count, p_total_amount, p_avg_items
-    FROM orders o
-    JOIN order_statuses os ON o.status_id = os.status_id
-    JOIN order_assignments oa ON o.order_id = oa.order_id
-    JOIN users u ON o.user_id = u.user_id
-    WHERE oa.agent_id = p_agent_id
-    AND (p_status_name IS NULL OR os.status_name = p_status_name);
-END;
-/
-
-
-CREATE OR REPLACE PROCEDURE get_delivery_agent_stats (
-    p_agent_id IN NUMBER,
-    p_completed_deliveries OUT NUMBER,
-    p_pending_deliveries OUT NUMBER,
-    p_total_earnings OUT NUMBER
-) AS
-BEGIN
-    SELECT 
-        (SELECT COUNT(*) FROM order_assignments oa 
-         JOIN orders o ON oa.order_id = o.order_id 
-         WHERE oa.agent_id = p_agent_id 
-         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')),
-
-        (SELECT COUNT(*) FROM order_assignments oa 
-         JOIN orders o ON oa.order_id = o.order_id 
-         WHERE oa.agent_id = p_agent_id 
-         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name IN ('Processing', 'Shipped'))),
-
-        (SELECT COUNT(*) FROM order_assignments oa 
-         JOIN orders o ON oa.order_id = o.order_id 
-         WHERE oa.agent_id = p_agent_id 
-         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) * 134
-    INTO p_completed_deliveries, p_pending_deliveries, p_total_earnings
-    FROM dual;
-END;
-/
 
 
 
@@ -3017,6 +3121,395 @@ END;
 /
 
 
+-- delivery man page
+
+-- Procedure to get delivery agent dashboard information
+CREATE OR REPLACE PROCEDURE get_delivery_agent_dashboard (
+    p_agent_id IN NUMBER,
+    p_all_assignments OUT SYS_REFCURSOR,
+    p_pending_assignments OUT SYS_REFCURSOR,
+    p_completed_assignments OUT SYS_REFCURSOR,
+    p_stats OUT SYS_REFCURSOR,
+    p_history OUT SYS_REFCURSOR
+) AS
+BEGIN
+    -- 1. All assigned deliveries (pending or completed)
+    OPEN p_all_assignments FOR
+    SELECT 
+        o.order_id,
+        o.order_number,
+        o.order_date,
+        os.status_name AS order_status,
+        u.first_name || ' ' || u.last_name AS customer_name,
+        u.phone AS customer_phone,
+        o.delivery_address,
+        o.total_amount,
+        o.estimated_delivery_date,
+        oa.assigned_at,
+        oa.completed_at,
+        oa.notes,
+        dm.name AS delivery_method,
+        dm.base_cost AS delivery_cost,
+        dc.customer_confirmed,
+        dc.agent_confirmed,
+        dc.confirmed_date
+    FROM orders o
+    JOIN order_assignments oa ON o.order_id = oa.order_id
+    JOIN order_statuses os ON o.status_id = os.status_id
+    JOIN users u ON o.user_id = u.user_id
+    JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
+    LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
+    WHERE oa.agent_id = p_agent_id
+    ORDER BY o.order_date DESC;
+
+    -- 2. Pending deliveries
+    OPEN p_pending_assignments FOR
+    SELECT 
+        o.order_id,
+        o.order_number,
+        o.order_date,
+        os.status_name AS order_status,
+        u.first_name || ' ' || u.last_name AS customer_name,
+        u.phone AS customer_phone,
+        o.delivery_address,
+        o.total_amount,
+        o.estimated_delivery_date,
+        oa.assigned_at,
+        dm.name AS delivery_method,
+        LISTAGG(pi.name || ' (Qty: ' || oi.quantity || ')', ', ') 
+            WITHIN GROUP (ORDER BY oi.order_item_id) AS order_items
+    FROM orders o
+    JOIN order_assignments oa ON o.order_id = oa.order_id
+    JOIN order_statuses os ON o.status_id = os.status_id
+    JOIN users u ON o.user_id = u.user_id
+    JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
+    JOIN order_items oi ON o.order_id = oi.order_id
+    JOIN plants pi ON oi.plant_id = pi.plant_id
+    WHERE oa.agent_id = p_agent_id
+    AND os.status_name IN ('Processing', 'Shipped', 'Out for Delivery')
+    AND oa.completed_at IS NULL
+    GROUP BY 
+        o.order_id, o.order_number, o.order_date, os.status_name,
+        u.first_name, u.last_name, u.phone, o.delivery_address,
+        o.total_amount, o.estimated_delivery_date, oa.assigned_at, dm.name
+    ORDER BY o.order_date DESC;
+
+    -- 3. Completed deliveries
+    OPEN p_completed_assignments FOR
+    SELECT 
+        o.order_id,
+        o.order_number,
+        o.order_date,
+        os.status_name AS order_status,
+        u.first_name || ' ' || u.last_name AS customer_name,
+        u.phone AS customer_phone,
+        o.delivery_address,
+        o.total_amount,
+        o.actual_delivery_date,
+        oa.assigned_at,
+        oa.completed_at,
+        dm.name AS delivery_method,
+        dc.customer_confirmed,
+        dc.agent_confirmed,
+        dc.confirmed_date
+    FROM orders o
+    JOIN order_assignments oa ON o.order_id = oa.order_id
+    JOIN order_statuses os ON o.status_id = os.status_id
+    JOIN users u ON o.user_id = u.user_id
+    JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
+    LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
+    WHERE oa.agent_id = p_agent_id
+    AND os.status_name = 'Delivered'
+    AND oa.completed_at IS NOT NULL
+    ORDER BY o.actual_delivery_date DESC;
+
+    -- 4. Delivery statistics
+    OPEN p_stats FOR
+    WITH agent_stats AS (
+        SELECT 
+            COUNT(*) AS total_deliveries,
+            SUM(CASE WHEN os.status_name = 'Delivered' THEN 1 ELSE 0 END) AS completed_deliveries,
+            SUM(CASE WHEN os.status_name IN ('Processing', 'Shipped', 'Out for Delivery') THEN 1 ELSE 0 END) AS pending_deliveries,
+            SUM(CASE WHEN os.status_name = 'Delivered' THEN o.total_amount * 0.05 ELSE 0 END) AS total_earnings,
+            AVG(CASE WHEN os.status_name = 'Delivered' THEN o.total_amount * 0.05 ELSE NULL END) AS avg_earnings_per_delivery
+        FROM orders o
+        JOIN order_assignments oa ON o.order_id = oa.order_id
+        JOIN order_statuses os ON o.status_id = os.status_id
+        WHERE oa.agent_id = p_agent_id
+    )
+    SELECT 
+        total_deliveries,
+        completed_deliveries,
+        pending_deliveries,
+        total_earnings,
+        avg_earnings_per_delivery,
+        ROUND((completed_deliveries / NULLIF(total_deliveries, 0)) * 100, 2) AS completion_rate
+    FROM agent_stats;
+
+    -- 5. Delivery history (last 30 days)
+    OPEN p_history FOR
+    SELECT 
+        o.order_id,
+        o.order_number,
+        o.order_date,
+        os.status_name AS order_status,
+        u.first_name || ' ' || u.last_name AS customer_name,
+        o.delivery_address,
+        o.total_amount,
+        o.actual_delivery_date,
+        oa.completed_at,
+        dc.customer_confirmed,
+        dc.agent_confirmed,
+        dc.confirmed_date,
+        ROUND(o.total_amount * 0.05, 2) AS delivery_fee
+    FROM orders o
+    JOIN order_assignments oa ON o.order_id = oa.order_id
+    JOIN order_statuses os ON o.status_id = os.status_id
+    JOIN users u ON o.user_id = u.user_id
+    LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
+    WHERE oa.agent_id = p_agent_id
+    AND o.order_date >= SYSDATE - 30
+    ORDER BY o.order_date DESC;
+
+END get_delivery_agent_dashboard;
+/
+
+-- Procedure for delivery agent to mark delivery as delivered
+CREATE OR REPLACE PROCEDURE mark_delivery_delivered (
+    p_order_id IN NUMBER,
+    p_agent_id IN NUMBER,
+    p_notes IN VARCHAR2 DEFAULT NULL,
+    p_success OUT NUMBER,
+    p_message OUT VARCHAR2
+) AS
+    v_assignment_exists NUMBER;
+    v_current_status VARCHAR2(50);
+    v_confirmation_exists NUMBER;
+BEGIN
+    -- Check if assignment exists and belongs to this agent
+    SELECT COUNT(*)
+    INTO v_assignment_exists
+    FROM order_assignments oa
+    WHERE oa.order_id = p_order_id AND oa.agent_id = p_agent_id;
+
+    IF v_assignment_exists = 0 THEN
+        p_success := 0;
+        p_message := 'Order not assigned to this delivery agent';
+        RETURN;
+    END IF;
+
+    -- Get current status
+    SELECT os.status_name
+    INTO v_current_status
+    FROM orders o
+    JOIN order_statuses os ON o.status_id = os.status_id
+    WHERE o.order_id = p_order_id;
+
+    -- Update assignment completion time
+    UPDATE order_assignments
+    SET completed_at = SYSTIMESTAMP,
+        notes = NVL(p_notes, notes)
+    WHERE order_id = p_order_id;
+
+    -- Update order status to "Out for Delivery" if not already delivered
+    IF v_current_status != 'Delivered' THEN
+        UPDATE orders
+        SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Out for Delivery')
+        WHERE order_id = p_order_id;
+    END IF;
+
+    -- Check if delivery confirmation record exists
+    SELECT COUNT(*)
+    INTO v_confirmation_exists
+    FROM delivery_confirmations
+    WHERE order_id = p_order_id;
+
+    -- Create delivery confirmation record if it doesn't exist
+    IF v_confirmation_exists = 0 THEN
+        INSERT INTO delivery_confirmations (
+            order_id, 
+            user_id, 
+            agent_id, 
+            agent_confirmed
+        )
+        SELECT 
+            p_order_id,
+            o.user_id,
+            p_agent_id,
+            1 -- Agent confirmed
+        FROM orders o
+        WHERE o.order_id = p_order_id;
+    ELSE
+        -- Update existing confirmation
+        UPDATE delivery_confirmations
+        SET agent_confirmed = 1,
+            confirmed_date = CASE WHEN customer_confirmed = 1 THEN SYSTIMESTAMP ELSE confirmed_date END
+        WHERE order_id = p_order_id;
+    END IF;
+
+    -- If customer already confirmed, mark as delivered
+    DECLARE
+        v_customer_confirmed NUMBER;
+    BEGIN
+        SELECT customer_confirmed
+        INTO v_customer_confirmed
+        FROM delivery_confirmations
+        WHERE order_id = p_order_id;
+
+        IF v_customer_confirmed = 1 THEN
+            UPDATE orders
+            SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
+                actual_delivery_date = SYSTIMESTAMP
+            WHERE order_id = p_order_id;
+        END IF;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            NULL;
+    END;
+
+    COMMIT;
+    p_success := 1;
+    p_message := 'Delivery marked as delivered successfully. Waiting for customer confirmation.';
+
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        p_success := 0;
+        p_message := 'Error: ' || SQLERRM;
+END mark_delivery_delivered;
+/
+
+-- Function to get delivery agent's current assignments count
+CREATE OR REPLACE FUNCTION get_delivery_agent_assignment_count (
+    p_agent_id IN NUMBER,
+    p_status IN VARCHAR2 DEFAULT NULL
+) RETURN NUMBER AS
+    v_count NUMBER;
+BEGIN
+    IF p_status IS NULL THEN
+        SELECT COUNT(*)
+        INTO v_count
+        FROM order_assignments oa
+        JOIN orders o ON oa.order_id = o.order_id
+        WHERE oa.agent_id = p_agent_id
+        AND oa.completed_at IS NULL;
+    ELSE
+        SELECT COUNT(*)
+        INTO v_count
+        FROM order_assignments oa
+        JOIN orders o ON oa.order_id = o.order_id
+        JOIN order_statuses os ON o.status_id = os.status_id
+        WHERE oa.agent_id = p_agent_id
+        AND os.status_name = p_status
+        AND oa.completed_at IS NULL;
+    END IF;
+
+    RETURN v_count;
+END get_delivery_agent_assignment_count;
+/
+
+-- Procedure to get delivery agent's monthly earnings
+CREATE OR REPLACE PROCEDURE get_delivery_agent_monthly_earnings (
+    p_agent_id IN NUMBER,
+    p_year IN NUMBER DEFAULT EXTRACT(YEAR FROM SYSDATE),
+    p_earnings_out OUT SYS_REFCURSOR
+) AS
+BEGIN
+    OPEN p_earnings_out FOR
+    SELECT 
+        EXTRACT(MONTH FROM o.actual_delivery_date) AS month,
+        TO_CHAR(o.actual_delivery_date, 'Month') AS month_name,
+        COUNT(*) AS deliveries_completed,
+        SUM(o.total_amount * 0.05) AS monthly_earnings,
+        AVG(o.total_amount * 0.05) AS avg_earnings_per_delivery
+    FROM orders o
+    JOIN order_assignments oa ON o.order_id = oa.order_id
+    JOIN order_statuses os ON o.status_id = os.status_id
+    WHERE oa.agent_id = p_agent_id
+    AND os.status_name = 'Delivered'
+    AND EXTRACT(YEAR FROM o.actual_delivery_date) = p_year
+    GROUP BY EXTRACT(MONTH FROM o.actual_delivery_date), TO_CHAR(o.actual_delivery_date, 'Month')
+    ORDER BY EXTRACT(MONTH FROM o.actual_delivery_date);
+END get_delivery_agent_monthly_earnings;
+/
+
+select * from user_roles;
+select * from roles;
+select * from users;
+
+-- Example usage of the procedures:
+
+-- DECLARE
+--     v_agent_id NUMBER := 1; -- Example agent ID
+--     v_all_assignments SYS_REFCURSOR;
+--     v_pending_assignments SYS_REFCURSOR;
+--     v_completed_assignments SYS_REFCURSOR;
+--     v_stats SYS_REFCURSOR;
+--     v_history SYS_REFCURSOR;
+--     v_success NUMBER;
+--     v_message VARCHAR2(4000);
+    
+--     -- Variables to fetch cursor data
+--     TYPE t_assignment IS RECORD (
+--         order_id NUMBER,
+--         order_number VARCHAR2(20),
+--         order_date TIMESTAMP,
+--         order_status VARCHAR2(50),
+--         customer_name VARCHAR2(101),
+--         customer_phone VARCHAR2(20),
+--         delivery_address VARCHAR2(500),
+--         total_amount NUMBER,
+--         estimated_delivery_date TIMESTAMP,
+--         assigned_at TIMESTAMP,
+--         completed_at TIMESTAMP,
+--         notes VARCHAR2(500),
+--         delivery_method VARCHAR2(50),
+--         delivery_cost NUMBER,
+--         customer_confirmed NUMBER,
+--         agent_confirmed NUMBER,
+--         confirmed_date TIMESTAMP
+--     );
+--     v_assignment t_assignment;
+-- BEGIN
+--     -- Get dashboard information
+--     get_delivery_agent_dashboard(
+--         p_agent_id => v_agent_id,
+--         p_all_assignments => v_all_assignments,
+--         p_pending_assignments => v_pending_assignments,
+--         p_completed_assignments => v_completed_assignments,
+--         p_stats => v_stats,
+--         p_history => v_history
+--     );
+
+--     -- Process the results (example for all assignments)
+--     DBMS_OUTPUT.PUT_LINE('=== ALL ASSIGNMENTS ===');
+--     LOOP
+--         FETCH v_all_assignments INTO v_assignment;
+--         EXIT WHEN v_all_assignments%NOTFOUND;
+--         DBMS_OUTPUT.PUT_LINE('Order: ' || v_assignment.order_number || 
+--                            ', Status: ' || v_assignment.order_status ||
+--                            ', Customer: ' || v_assignment.customer_name);
+--     END LOOP;
+--     CLOSE v_all_assignments;
+
+--     -- Mark a delivery as delivered
+--     mark_delivery_delivered(
+--         p_order_id => 321, -- Example order ID
+--         p_agent_id => v_agent_id,
+--         p_notes => 'Delivered successfully',
+--         p_success => v_success,
+--         p_message => v_message
+--     );
+
+--     DBMS_OUTPUT.PUT_LINE('Mark Delivery Result: ' || v_message);
+
+--     -- Get assignment count
+--     DBMS_OUTPUT.PUT_LINE('Pending Assignments: ' || 
+--         get_delivery_agent_assignment_count(v_agent_id, 'Processing'));
+-- END;
+-- /
+
+
 -- sign up page
 
 
@@ -3189,63 +3682,53 @@ BEGIN
 END;
 /
 
-CREATE OR REPLACE FUNCTION user_login_func (
-    p_email        IN VARCHAR2,
-    p_password     IN VARCHAR2,
-    p_ip_address   IN VARCHAR2
+-- Add this to your SQL script to create the required function
+CREATE OR REPLACE FUNCTION user_login_func(
+    p_email IN VARCHAR2,
+    p_password_hash IN VARCHAR2,
+    p_ip_address IN VARCHAR2
 ) RETURN VARCHAR2
 IS
-    PRAGMA AUTONOMOUS_TRANSACTION;
-    v_user_id   users.user_id%TYPE;
-    v_password  users.password_hash%TYPE;
-    v_user_exists NUMBER;
+    v_user_id NUMBER;
+    v_is_active NUMBER;
+    v_stored_hash VARCHAR2(255);
 BEGIN
-    -- Check if user exists first
-    SELECT COUNT(*)
-    INTO v_user_exists
+    -- Check if user exists and get their details
+    SELECT user_id, password_hash, is_active
+    INTO v_user_id, v_stored_hash, v_is_active
     FROM users
     WHERE email = p_email;
-
-    IF v_user_exists = 0 THEN
-        -- Log unknown user attempt
-        INSERT INTO activity_log (activity_type, activity_details, ip_address)
-        VALUES ('LOGIN_FAILED', 'No such email: ' || p_email, p_ip_address);
-        COMMIT;
-        RETURN 'USER NOT FOUND';
+    
+    -- Check if user is active
+    IF v_is_active = 0 THEN
+        RETURN 'ACCOUNT INACTIVE';
     END IF;
-
-    -- Get user credentials
-    SELECT user_id, password_hash
-    INTO v_user_id, v_password
-    FROM users
-    WHERE email = p_email;
-
+    
     -- Check password
-    IF v_password = p_password THEN
-        -- Update last login
-        UPDATE users
-        SET last_login = SYSTIMESTAMP
+    IF v_stored_hash = p_password_hash THEN
+        -- Update last login timestamp
+        UPDATE users 
+        SET last_login = SYSTIMESTAMP 
         WHERE user_id = v_user_id;
-
-        -- Log success
+        
+        -- Log the login activity
         INSERT INTO activity_log (user_id, activity_type, activity_details, ip_address)
         VALUES (v_user_id, 'LOGIN', 'User logged in successfully', p_ip_address);
         
-        COMMIT;
         RETURN 'LOGIN SUCCESSFUL';
     ELSE
-        -- Log failure
+        -- Log failed login attempt
         INSERT INTO activity_log (user_id, activity_type, activity_details, ip_address)
-        VALUES (v_user_id, 'LOGIN_FAILED', 'Incorrect password', p_ip_address);
-        COMMIT;
+        VALUES (v_user_id, 'LOGIN_FAILED', 'Invalid password attempt', p_ip_address);
         
-        RETURN 'INVALID PASSWORD';
+        RETURN 'INVALID CREDENTIALS';
     END IF;
-
+    
 EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        RETURN 'USER NOT FOUND';
     WHEN OTHERS THEN
-        ROLLBACK;
-        RETURN 'ERROR: ' || SQLERRM;
+        RETURN 'LOGIN ERROR: ' || SQLERRM;
 END;
 /
 

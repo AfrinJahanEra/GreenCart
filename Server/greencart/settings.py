@@ -35,7 +35,6 @@ INSTALLED_APPS = [
     'cart_sidebar',
     'order',
     'admin_dashboard',
-    'delivery_confirmation',
     'greencart_admin',
     'delivery_agent',
     'seller',

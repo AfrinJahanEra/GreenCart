@@ -53,21 +53,21 @@ function App() {
             
             {/* Protected Routes */}
             <Route path="/order" element={
-              <ProtectedRoute>
+  
                 <Order />
-              </ProtectedRoute>
+
             } />
             <Route path="/order-confirmation" element={
-              <ProtectedRoute>
+
                 <OrderConfirmation />
-              </ProtectedRoute>
+
             } />
             
             {/* Seller Routes */}
             <Route path="/seller/*" element={
-              <ProtectedRoute requiredRole="seller">
+    
                 <SellerDashboard />
-              </ProtectedRoute>
+ 
             }>
               <Route index element={<Dashboard />} />
               <Route path="dashboard" element={<Dashboard />} />
@@ -79,9 +79,9 @@ function App() {
             
             {/* Delivery Routes */}
             <Route path="/delivery/*" element={
-              <ProtectedRoute requiredRole="delivery">
+
                 <DeliveryDashboard />
-              </ProtectedRoute>
+
             }>
               <Route index element={<Assigned />} />
               <Route path="assigned" element={<Assigned />} />
@@ -92,9 +92,9 @@ function App() {
             
             {/* Admin Routes */}
             <Route path="/admin/*" element={
-              <ProtectedRoute requiredRole="admin">
+  
                 <AdminDashboard />
-              </ProtectedRoute>
+       
             }>
               <Route index element={<AdDashboard />} />
               <Route path="dashboard" element={<AdDashboard />} />
@@ -107,9 +107,9 @@ function App() {
             
             {/* Customer Orders */}
             <Route path="/orders/*" element={
-              <ProtectedRoute>
+  
                 <OrderDashboard />
-              </ProtectedRoute>
+     
             }>
               <Route index element={<Navigate to="all" replace />} />
               <Route path="all" element={<AllOrders />} />

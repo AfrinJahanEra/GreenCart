@@ -1,77 +1,76 @@
+// src/pages/delivery/Assigned.jsx
 import { useOutletContext } from 'react-router-dom';
 import { theme } from '../../theme';
 
 const Assigned = () => {
-  const { deliveries, onStatusChange } = useOutletContext();
+  const { dashboardData, onStatusChange, loading } = useOutletContext();
   
-  const assignedDeliveries = deliveries.filter(
-    delivery => delivery.deliveryStatus === 'Pending'
-  );
+  // Handle undefined data
+  const assignedDeliveries = dashboardData?.all_assignments || [];
+
+  const handleMarkDelivered = async (orderId) => {
+    const result = await onStatusChange(orderId, 'Delivered successfully');
+    if (!result.success) {
+      alert(`Error: ${result.error}`);
+    }
+  };
 
   return (
     <div className="overflow-x-auto">
       <h1 className="text-2xl font-bold mb-6" style={{ color: theme.colors.primary }}>
-        Assigned Deliveries
+        All Assigned Deliveries ({assignedDeliveries.length})
       </h1>
       
       <div className="bg-white rounded-lg shadow overflow-hidden">
-        {/* Header row - hidden on mobile */}
-        <div className="hidden md:grid grid-cols-12 bg-gray-100 p-3 font-medium">
-          <div className="col-span-2">Order ID</div>
-          <div className="col-span-2">Customer</div>
-          <div className="col-span-2">Phone</div>
-          <div className="col-span-3">Address</div>
-          <div className="col-span-1">Amount</div>
-          <div className="col-span-2">Actions</div>
-        </div>
-        
         {assignedDeliveries.length > 0 ? (
           assignedDeliveries.map(delivery => (
-            <div key={delivery.id} className="grid grid-cols-1 md:grid-cols-12 p-4 border-b gap-4 md:gap-0">
+            <div key={delivery.order_id} className="grid grid-cols-1 md:grid-cols-12 p-4 border-b gap-4 md:gap-0">
               {/* Mobile view */}
               <div className="md:hidden space-y-2">
                 <div className="flex justify-between">
                   <span className="font-medium">Order ID:</span>
-                  <span>#{delivery.id}</span>
+                  <span>#{delivery.order_number}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Customer:</span>
-                  <span>{delivery.customerName}</span>
+                  <span>{delivery.customer_name}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Phone:</span>
-                  <span className="text-sm">{delivery.customerPhone}</span>
+                  <span className="text-sm">{delivery.customer_phone}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Address:</span>
-                  <span className="text-sm">{delivery.address}</span>
+                  <span className="text-sm">{delivery.delivery_address}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Amount:</span>
-                  <span>${delivery.amount}</span>
+                  <span>${delivery.total_amount?.toFixed(2) || '0.00'}</span>
                 </div>
                 <div className="pt-2">
                   <button
-                    onClick={() => onStatusChange(delivery.id, 'Delivered')}
-                    className="w-full bg-[#224229] text-white px-3 py-2 rounded hover:bg-[#4b6250] transition-colors text-sm"
+                    onClick={() => handleMarkDelivered(delivery.order_id)}
+                    disabled={loading}
+                    className="w-full bg-[#224229] text-white px-3 py-2 rounded hover:bg-[#4b6250] disabled:bg-gray-400 transition-colors text-sm"
                   >
-                    Mark Delivered
+                    {loading ? 'Processing...' : 'Mark Delivered'}
                   </button>
                 </div>
               </div>
               
               {/* Desktop view */}
-              <div className="hidden md:grid col-span-2 font-medium items-center">#{delivery.id}</div>
-              <div className="hidden md:grid col-span-2 items-center">{delivery.customerName}</div>
-              <div className="hidden md:grid col-span-2 items-center text-sm">{delivery.customerPhone}</div>
-              <div className="hidden md:grid col-span-3 items-center text-sm">{delivery.address}</div>
-              <div className="hidden md:grid col-span-1 items-center">${delivery.amount}</div>
+              <div className="hidden md:grid col-span-2 font-medium items-center">#{delivery.order_number}</div>
+              <div className="hidden md:grid col-span-2 items-center">{delivery.customer_name}</div>
+              <div className="hidden md:grid col-span-2 items-center text-sm">{delivery.customer_phone}</div>
+              <div className="hidden md:grid col-span-3 items-center text-sm">{delivery.delivery_address}</div>
+              <div className="hidden md:grid col-span-1 items-center">${delivery.total_amount?.toFixed(2) || '0.00'}</div>
               <div className="hidden md:grid col-span-2 items-center">
                 <button
-                  onClick={() => onStatusChange(delivery.id, 'Delivered')}
-                  className="bg-[#224229] text-white px-3 py-1 rounded hover:bg-[#4b6250] transition-colors text-sm"
+                  onClick={() => handleMarkDelivered(delivery.order_id)}
+                  disabled={loading}
+                  className="bg-[#224229] text-white px-3 py-1 rounded hover:bg-[#4b6250] disabled:bg-gray-400 transition-colors text-sm"
                 >
-                  Mark Delivered
+                  {loading ? 'Processing...' : 'Mark Delivered'}
                 </button>
               </div>
             </div>

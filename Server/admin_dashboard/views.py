@@ -129,8 +129,8 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django.db import connection
 import oracledb
 
+# Remove the permission classes decorator completely
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, IsAdminUser])
 def get_user_list(request, role_name):
     try:
         # Validate role name

@@ -2,16 +2,27 @@
 import { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { theme } from '../../theme.js';
+import { useSellerDashboard } from '../../hooks/useSellerDashboard';
+import { useAuth } from '../../contexts/AuthContext';
 
 const AddPlant = () => {
-  const { onAddPlant } = useOutletContext();
+  const { refreshAllData } = useOutletContext();
+  const { user } = useAuth();
+  const { addPlant, uploadImages, dashboardData, loading } = useSellerDashboard(user?.user_id);
+  
   const [formData, setFormData] = useState({
     name: '',
-    price: '',
     description: '',
-    stock: '',
-    image: null
+    base_price: '',
+    stock_quantity: '',
+    category_ids: '',
+    features: '',
+    care_tips: '',
+    sizes: 'Small:-5.00,Medium:0.00,Large:10.00',
+    images: []
   });
+
+  const [uploadedImages, setUploadedImages] = useState([]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -19,29 +30,52 @@ const AddPlant = () => {
   };
 
   const handleImageChange = (e) => {
-    setFormData(prev => ({ ...prev, image: e.target.files[0] }));
+    setFormData(prev => ({ ...prev, images: Array.from(e.target.files) }));
   };
 
-  const handleSubmit = (e) => {
+  const handleUploadImages = async () => {
+    if (formData.images.length === 0) return;
+    
+    const result = await uploadImages(formData.images);
+    if (result.success) {
+      setUploadedImages(result.images);
+      alert('Images uploaded successfully!');
+    } else {
+      alert(`Failed to upload images: ${result.error}`);
+    }
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // In a real app, you would upload the image and get a URL
-    const newPlant = {
-      id: Date.now(),
-      name: formData.name,
-      price: parseFloat(formData.price),
-      stock: parseInt(formData.stock),
-      description: formData.description,
-      image: formData.image ? URL.createObjectURL(formData.image) : 'https://via.placeholder.com/150'
+    
+    const plantData = {
+      ...formData,
+      seller_id: user.user_id,
+      base_price: parseFloat(formData.base_price),
+      stock_quantity: parseInt(formData.stock_quantity),
+      images: uploadedImages.map(img => img.url).join(',')
     };
-    onAddPlant(newPlant);
-    alert('Plant added successfully!');
-    setFormData({
-      name: '',
-      price: '',
-      description: '',
-      stock: '',
-      image: null
-    });
+
+    const result = await addPlant(plantData);
+    
+    if (result.success) {
+      alert('Plant added successfully!');
+      setFormData({
+        name: '',
+        description: '',
+        base_price: '',
+        stock_quantity: '',
+        category_ids: '',
+        features: '',
+        care_tips: '',
+        sizes: 'Small:-5.00,Medium:0.00,Large:10.00',
+        images: []
+      });
+      setUploadedImages([]);
+      refreshAllData();
+    } else {
+      alert(`Failed to add plant: ${result.error}`);
+    }
   };
 
   return (
@@ -53,7 +87,7 @@ const AddPlant = () => {
           <div>
             <div className="mb-4">
               <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>
-                Plant Name
+                Plant Name *
               </label>
               <input
                 type="text"
@@ -67,12 +101,12 @@ const AddPlant = () => {
             
             <div className="mb-4">
               <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>
-                Price ($)
+                Base Price ($) *
               </label>
               <input
                 type="number"
-                name="price"
-                value={formData.price}
+                name="base_price"
+                value={formData.base_price}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 required
@@ -83,55 +117,118 @@ const AddPlant = () => {
             
             <div className="mb-4">
               <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>
-                Initial Stock
+                Initial Stock *
               </label>
               <input
                 type="number"
-                name="stock"
-                value={formData.stock}
+                name="stock_quantity"
+                value={formData.stock_quantity}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 required
                 min="0"
               />
             </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>
+                Category IDs (comma-separated)
+              </label>
+              <input
+                type="text"
+                name="category_ids"
+                value={formData.category_ids}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="1,2,3"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Available categories: {dashboardData.categories.map(c => c.category_id).join(', ')}
+              </p>
+            </div>
           </div>
           
           <div>
             <div className="mb-4">
               <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>
-                Plant Image
+                Plant Images *
               </label>
               <input
                 type="file"
-                name="image"
+                multiple
                 onChange={handleImageChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 accept="image/*"
+                required
               />
+              <button
+                type="button"
+                onClick={handleUploadImages}
+                className="mt-2 bg-blue-500 text-white px-4 py-1 rounded text-sm"
+                disabled={formData.images.length === 0}
+              >
+                Upload Images
+              </button>
+              {uploadedImages.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-sm text-green-600">Uploaded images:</p>
+                  {uploadedImages.map((img, index) => (
+                    <p key={index} className="text-xs truncate">{img.url}</p>
+                  ))}
+                </div>
+              )}
             </div>
             
             <div className="mb-4">
               <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>
-                Description
+                Description *
               </label>
               <textarea
                 name="description"
                 value={formData.description}
                 onChange={handleChange}
-                rows="4"
+                rows="3"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 required
               ></textarea>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>
+                Features (comma-separated)
+              </label>
+              <input
+                type="text"
+                name="features"
+                value={formData.features}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="Fragrant,Colorful,Perennial"
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>
+                Care Tips (comma-separated)
+              </label>
+              <input
+                type="text"
+                name="care_tips"
+                value={formData.care_tips}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="Water daily,Full sunlight"
+              />
             </div>
           </div>
         </div>
         
         <button
           type="submit"
-          className="bg-[#224229] text-white px-6 py-2 rounded-lg hover:bg-[#4b6250] transition-colors"
+          disabled={loading.addPlant}
+          className="bg-[#224229] text-white px-6 py-2 rounded-lg hover:bg-[#4b6250] transition-colors disabled:opacity-50"
         >
-          Add Plant
+          {loading.addPlant ? 'Adding Plant...' : 'Add Plant'}
         </button>
       </form>
     </div>

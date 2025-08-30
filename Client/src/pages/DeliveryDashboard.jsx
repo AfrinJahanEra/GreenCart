@@ -2,106 +2,55 @@
 import { useState, useEffect } from 'react';
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
+import { useAuth } from '../contexts/AuthContext';
+import { useDeliveryAgent } from '../hooks/useDeliveryAgent';
 
 const DeliveryDashboard = () => {
   const [activeTab, setActiveTab] = useState('assigned');
-  const [deliveries, setDeliveries] = useState([]);
-  const [totalEarnings, setTotalEarnings] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
-
-  // Sample data - in a real app, this would come from an API
-  useEffect(() => {
-    // Mock delivery data
-    const mockDeliveries = [
-      {
-        id: 'ORD1023',
-        customerName: 'Ridika Naznin',
-        customerPhone: '+8801712345678',
-        plantName: 'Monstera Deliciosa',
-        address: '25 Green Lane, Dhaka',
-        paymentStatus: 'Paid',
-        deliveryStatus: 'Pending',
-        amount: 45,
-        date: '2023-06-15'
-      },
-      {
-        id: 'ORD1025',
-        customerName: 'Sumaiya Tasnim',
-        customerPhone: '+8801812345678',
-        plantName: 'Succulent Set',
-        address: '88 Rose Avenue, Chattogram',
-        paymentStatus: 'Paid',
-        deliveryStatus: 'Delivered',
-        amount: 35,
-        date: '2023-06-14'
-      },
-      {
-        id: 'ORD1027',
-        customerName: 'John Smith',
-        customerPhone: '+8801912345678',
-        plantName: 'Snake Plant',
-        address: '12 Garden Road, Sylhet',
-        paymentStatus: 'Paid',
-        deliveryStatus: 'Pending',
-        amount: 55,
-        date: '2023-06-12'
-      },
-      {
-        id: 'ORD1028',
-        customerName: 'Sarah Johnson',
-        customerPhone: '+8801612345678',
-        plantName: 'Fiddle Leaf Fig',
-        address: '45 Park Street, Khulna',
-        paymentStatus: 'Paid',
-        deliveryStatus: 'Delivered',
-        amount: 65,
-        date: '2023-06-10'
-      }
-    ];
-
-    setDeliveries(mockDeliveries);
-    setTotalEarnings(
-      mockDeliveries
-        .filter(d => d.deliveryStatus === 'Delivered')
-        .reduce((total, delivery) => total + delivery.amount, 0)
-    );
-  }, []);
+  const { user } = useAuth();
+  
+  // Use the delivery agent hook
+  const { 
+    dashboardData, 
+    loading, 
+    error, 
+    markDeliveryCompleted,
+    refreshAllData 
+  } = useDeliveryAgent(user?.user_id);
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
     navigate(`/delivery/${tab}`);
-    setMobileMenuOpen(false); // Close mobile menu when a tab is selected
+    setMobileMenuOpen(false);
   };
 
-  const handleDeliveryStatusChange = (orderId, newStatus) => {
-    setDeliveries(deliveries.map(delivery => 
-      delivery.id === orderId 
-        ? { ...delivery, deliveryStatus: newStatus } 
-        : delivery
-    ));
-    
-    if (newStatus === 'Delivered') {
-      const deliveredOrder = deliveries.find(d => d.id === orderId);
-      if (deliveredOrder) {
-        setTotalEarnings(totalEarnings + deliveredOrder.amount);
-      }
+  const handleDeliveryStatusChange = async (orderId, notes = '') => {
+    const result = await markDeliveryCompleted(orderId, notes);
+    if (result.success) {
+      // Refresh data after successful delivery
+      await refreshAllData();
     }
+    return result;
   };
+
+  // Calculate total earnings from stats
+  const totalEarnings = dashboardData.stats?.total_earnings || 0;
 
   return (
     <div className="flex flex-col min-h-screen bg-[#f7f0e1]">
       <Header />
       
       <div className="flex flex-1">
-        {/* Sidebar - Updated for mobile responsiveness */}
+        {/* Sidebar */}
         <div className={`${mobileMenuOpen ? 'block' : 'hidden'} md:block fixed md:relative inset-0 z-40 w-64 bg-[#224229] text-white p-4`}>
           <div className="flex items-center gap-3 mb-8 p-2">
             <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-[#224229] font-bold">
-              D
+              {user?.first_name?.[0] || 'D'}
             </div>
             <div>
-              <p className="font-medium">Delivery Dashboard</p>
+              <p className="font-medium">{user?.first_name || 'Delivery Agent'}</p>
               <p className="text-xs text-green-200">Delivery Agent</p>
             </div>
           </div>
@@ -143,7 +92,6 @@ const DeliveryDashboard = () => {
             </ul>
           </nav>
           
-          {/* Mobile menu button (hidden on desktop) */}
           <div className="mt-8 pt-4 border-t border-green-700">
             <Link 
               to="/" 
@@ -154,7 +102,6 @@ const DeliveryDashboard = () => {
             </Link>
           </div>
 
-          {/* Close button for mobile */}
           <button 
             className="md:hidden absolute top-4 right-4 text-white"
             onClick={() => setMobileMenuOpen(false)}
@@ -178,15 +125,32 @@ const DeliveryDashboard = () => {
         </div>
         
         {/* Main content */}
-        <div className="flex-1 p-4 md:p-8 pb-16 md:pb-8"> {/* Added padding bottom for mobile */}
-          <Outlet context={{ 
-            deliveries, 
-            totalEarnings, 
-            onStatusChange: handleDeliveryStatusChange 
-          }} />
+        <div className="flex-1 p-4 md:p-8 pb-16 md:pb-8">
+          {loading.dashboard ? (
+            <div className="flex justify-center items-center h-64">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#224229]"></div>
+            </div>
+          ) : error.dashboard ? (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+              <p>Error: {error.dashboard}</p>
+              <button 
+                onClick={refreshAllData}
+                className="mt-2 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+              >
+                Retry
+              </button>
+            </div>
+          ) : (
+            <Outlet context={{ 
+              dashboardData, 
+              totalEarnings, 
+              onStatusChange: handleDeliveryStatusChange,
+              loading: loading.markDelivery
+            }} />
+          )}
         </div>
 
-        {/* Total earnings fixed at bottom - updated for mobile */}
+        {/* Total earnings fixed at bottom */}
         <div className="fixed bottom-0 left-0 right-0 md:left-64 bg-[#224229] text-white p-3 shadow-lg z-30">
           <div className="container mx-auto flex justify-between items-center">
             <span className="font-medium">Total Earnings:</span>
