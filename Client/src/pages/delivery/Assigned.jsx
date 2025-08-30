@@ -1,19 +1,56 @@
 // src/pages/delivery/Assigned.jsx
-import { useOutletContext } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
+import { useDeliveryAgent } from '../../hooks/useDeliveryAgent';
 import { theme } from '../../theme';
 
 const Assigned = () => {
-  const { dashboardData, onStatusChange, loading } = useOutletContext();
-  
-  // Handle undefined data
-  const assignedDeliveries = dashboardData?.all_assignments || [];
+  const { user } = useAuth();
+  const { fetchOrders, updateDeliveryStatus, loading, error } = useDeliveryAgent(user?.user_id);
+  const [assignedOrders, setAssignedOrders] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [statusUpdating, setStatusUpdating] = useState({});
 
-  const handleMarkDelivered = async (orderId) => {
-    const result = await onStatusChange(orderId, 'Delivered successfully by agent');
-    if (!result.success) {
-      alert(`Error: ${result.error}`);
-    } else {
-      alert('Delivery marked as completed! Waiting for customer confirmation.');
+  // Fetch assigned orders on component mount
+  useEffect(() => {
+    const loadAssignedOrders = async () => {
+      if (user?.user_id) {
+        setIsLoading(true);
+        try {
+          // Fetch all orders for this agent
+          const orders = await fetchOrders();
+          console.log('Fetched assigned orders:', orders);
+          setAssignedOrders(orders || []);
+        } catch (err) {
+          console.error('Error loading assigned orders:', err);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadAssignedOrders();
+  }, [user?.user_id, fetchOrders]);
+
+  const handleUpdateStatus = async (orderId, status) => {
+    setStatusUpdating(prev => ({ ...prev, [orderId]: true }));
+    
+    try {
+      const result = await updateDeliveryStatus(orderId, status, `Status updated to ${status}`);
+      
+      if (result.success) {
+        // Refresh the orders list
+        const updatedOrders = await fetchOrders();
+        setAssignedOrders(updatedOrders || []);
+        alert(result.message || 'Status updated successfully!');
+      } else {
+        alert(`Error: ${result.error}`);
+      }
+    } catch (err) {
+      console.error('Error updating status:', err);
+      alert('Failed to update status');
+    } finally {
+      setStatusUpdating(prev => ({ ...prev, [orderId]: false }));
     }
   };
 
@@ -28,54 +65,119 @@ const Assigned = () => {
     });
   };
 
-  const getStatusBadge = (delivery) => {
-    const { order_status, agent_confirmed, customer_confirmed } = delivery;
+  const getStatusBadge = (status) => {
+    const statusColors = {
+      'Processing': 'bg-orange-100 text-orange-800',
+      'Shipped': 'bg-blue-100 text-blue-800',
+      'Out for Delivery': 'bg-purple-100 text-purple-800',
+      'Delivered': 'bg-green-100 text-green-800'
+    };
     
-    if (order_status === 'Delivered' && agent_confirmed && customer_confirmed) {
-      return <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium">Delivered</span>;
-    } else if (order_status === 'Out for Delivery' && agent_confirmed && !customer_confirmed) {
-      return <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full text-xs font-medium">Awaiting Customer Confirmation</span>;
-    } else if (order_status === 'Shipped') {
-      return <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">Ready for Delivery</span>;
-    } else if (order_status === 'Processing') {
-      return <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded-full text-xs font-medium">Processing</span>;
-    }
-    return <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded-full text-xs font-medium">{order_status}</span>;
+    const colorClass = statusColors[status] || 'bg-gray-100 text-gray-800';
+    return <span className={`${colorClass} px-2 py-1 rounded-full text-xs font-medium`}>{status}</span>;
   };
 
-  const canMarkDelivered = (delivery) => {
-    return delivery.order_status !== 'Delivered' && !delivery.agent_confirmed;
+  const getActionButton = (order) => {
+    const orderId = order.order_id;
+    const status = order.order_status;
+    const isUpdating = statusUpdating[orderId];
+
+    if (status === 'Processing') {
+      return (
+        <button
+          onClick={() => handleUpdateStatus(orderId, 'PICKED_UP')}
+          disabled={isUpdating}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors text-sm"
+        >
+          {isUpdating ? 'Updating...' : 'Mark Picked Up'}
+        </button>
+      );
+    } else if (status === 'Shipped') {
+      return (
+        <button
+          onClick={() => handleUpdateStatus(orderId, 'OUT_FOR_DELIVERY')}
+          disabled={isUpdating}
+          className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:bg-gray-400 transition-colors text-sm"
+        >
+          {isUpdating ? 'Updating...' : 'Start Delivery'}
+        </button>
+      );
+    } else if (status === 'Out for Delivery') {
+      return (
+        <button
+          onClick={() => handleUpdateStatus(orderId, 'DELIVERED')}
+          disabled={isUpdating}
+          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:bg-gray-400 transition-colors text-sm"
+        >
+          {isUpdating ? 'Updating...' : 'Mark Delivered'}
+        </button>
+      );
+    } else {
+      return (
+        <span className="text-green-600 text-sm font-medium">Completed</span>
+      );
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#224229]"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="overflow-x-auto">
-      <h1 className="text-2xl font-bold mb-6" style={{ color: theme.colors.primary }}>
-        All Assigned Deliveries ({assignedDeliveries.length})
-      </h1>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold" style={{ color: theme.colors.primary }}>
+          All Assigned Deliveries ({assignedOrders.length})
+        </h1>
+        <button
+          onClick={async () => {
+            setIsLoading(true);
+            const orders = await fetchOrders();
+            setAssignedOrders(orders || []);
+            setIsLoading(false);
+          }}
+          className="bg-[#224229] text-white px-4 py-2 rounded-lg hover:bg-[#4b6250] transition-colors text-sm"
+        >
+          Refresh
+        </button>
+      </div>
       
-      {assignedDeliveries.length === 0 ? (
+      {error.orders && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+          Error: {error.orders}
+        </div>
+      )}
+      
+      {assignedOrders.length === 0 ? (
         <div className="text-center py-10 bg-white rounded-lg shadow">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
           </svg>
-          <p className="mt-4 text-lg text-gray-600">No deliveries assigned yet</p>
-          <p className="text-sm text-gray-500">Deliveries will appear here once assigned by admin</p>
+          <p className="mt-4 text-lg text-gray-600">No deliveries assigned</p>
+          <p className="text-sm text-gray-500">You currently have no assigned deliveries</p>
         </div>
       ) : (
-        <div className="space-y-6">
-          {assignedDeliveries.map(delivery => (
-            <div key={delivery.order_id} className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="space-y-4">
+          {assignedOrders.map(order => (
+            <div key={order.order_id} className="bg-white rounded-lg shadow overflow-hidden">
               {/* Order Header */}
-              <div className="bg-gray-50 p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b gap-2">
+              <div className="bg-blue-50 p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b gap-2">
                 <div>
-                  <h3 className="font-medium text-lg">Order #{delivery.order_number}</h3>
+                  <h3 className="font-medium text-lg">Order #{order.order_number}</h3>
                   <p className="text-sm text-gray-500">
-                    {delivery.order_date ? new Date(delivery.order_date).toLocaleDateString() : 'N/A'}
+                    Ordered: {formatDate(order.order_date)}
                   </p>
+                  <div className="mt-1">
+                    {getStatusBadge(order.order_status)}
+                  </div>
                 </div>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-                  {getStatusBadge(delivery)}
-                  <span className="font-bold text-lg">${(delivery.total_amount || 0).toFixed(2)}</span>
+                <div className="text-right">
+                  <span className="font-bold text-lg">${(order.total_amount || 0).toFixed(2)}</span>
+                  <p className="text-sm text-gray-500">Delivery Fee: ${(order.delivery_cost || order.total_amount * 0.05).toFixed(2)}</p>
                 </div>
               </div>
               
@@ -90,15 +192,15 @@ const Assigned = () => {
                       Customer Details
                     </h4>
                     <div className="space-y-2 text-sm">
-                      <div><strong>Name:</strong> {delivery.customer_name || 'N/A'}</div>
+                      <div><strong>Name:</strong> {order.customer_name || 'N/A'}</div>
                       <div><strong>Email:</strong> 
-                        <a href={`mailto:${delivery.customer_email}`} className="text-blue-600 hover:underline ml-1">
-                          {delivery.customer_email || 'N/A'}
+                        <a href={`mailto:${order.customer_email}`} className="text-blue-600 hover:underline ml-1 break-all">
+                          {order.customer_email || 'N/A'}
                         </a>
                       </div>
                       <div><strong>Phone:</strong> 
-                        <a href={`tel:${delivery.customer_phone}`} className="text-blue-600 hover:underline ml-1">
-                          {delivery.customer_phone || 'N/A'}
+                        <a href={`tel:${order.customer_phone}`} className="text-blue-600 hover:underline ml-1">
+                          {order.customer_phone || 'N/A'}
                         </a>
                       </div>
                     </div>
@@ -111,15 +213,18 @@ const Assigned = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                       </svg>
-                      Delivery Information
+                      Delivery Details
                     </h4>
                     <div className="space-y-2 text-sm">
-                      <div><strong>Address:</strong> {delivery.delivery_address || 'No address provided'}</div>
-                      <div><strong>Method:</strong> {delivery.delivery_method || 'Standard'}</div>
-                      <div><strong>Est. Time:</strong> {delivery.delivery_time || 'N/A'} days</div>
-                      <div><strong>Assigned:</strong> {formatDate(delivery.assigned_at)}</div>
-                      {delivery.estimated_delivery_date && (
-                        <div><strong>Est. Delivery:</strong> {formatDate(delivery.estimated_delivery_date)}</div>
+                      <div><strong>Address:</strong> {order.delivery_address || 'No address provided'}</div>
+                      <div><strong>Method:</strong> {order.delivery_method || 'Standard'}</div>
+                      <div><strong>Est. Time:</strong> {order.estimated_days || 'N/A'}</div>
+                      <div><strong>Assigned:</strong> {formatDate(order.assigned_at)}</div>
+                      {order.estimated_delivery_date && (
+                        <div><strong>Est. Delivery:</strong> {formatDate(order.estimated_delivery_date)}</div>
+                      )}
+                      {order.tracking_number && (
+                        <div><strong>Tracking:</strong> {order.tracking_number}</div>
                       )}
                     </div>
                   </div>
@@ -130,27 +235,24 @@ const Assigned = () => {
                       <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                       </svg>
-                      Order Items ({delivery.total_items_count || 0})
+                      Order Summary
                     </h4>
                     <div className="space-y-2 text-sm">
                       <div className="bg-gray-50 p-2 rounded text-xs max-h-20 overflow-y-auto">
-                        {delivery.order_items || 'No items listed'}
+                        {order.items_summary || 'No items listed'}
                       </div>
-                      <div><strong>Total Amount:</strong> ${(delivery.total_amount || 0).toFixed(2)}</div>
-                      <div><strong>Delivery Fee:</strong> 
-                        <span className="text-green-600 font-medium ml-1">${(delivery.delivery_fee || 0).toFixed(2)}</span>
+                      <div><strong>Total:</strong> ${(order.total_amount || 0).toFixed(2)}</div>
+                      <div><strong>Your Fee:</strong> 
+                        <span className="text-green-600 font-medium ml-1">
+                          ${(order.delivery_cost || order.total_amount * 0.05).toFixed(2)}
+                        </span>
                       </div>
-                      {delivery.order_status === 'Out for Delivery' && (
-                        <div className="text-sm text-orange-600">
-                          {delivery.agent_confirmed ? 'Agent confirmed - Waiting for customer' : 'Waiting for agent confirmation'}
-                        </div>
-                      )}
                     </div>
                   </div>
                 </div>
                 
                 {/* Delivery Notes */}
-                {delivery.delivery_notes && (
+                {order.delivery_notes && (
                   <div className="mt-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded">
                     <div className="flex items-start">
                       <svg className="w-4 h-4 text-yellow-600 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
@@ -158,7 +260,7 @@ const Assigned = () => {
                       </svg>
                       <div>
                         <strong className="text-yellow-800">Delivery Notes:</strong>
-                        <p className="text-yellow-700 text-sm mt-1">{delivery.delivery_notes}</p>
+                        <p className="text-yellow-700 text-sm mt-1">{order.delivery_notes}</p>
                       </div>
                     </div>
                   </div>
@@ -166,29 +268,7 @@ const Assigned = () => {
                 
                 {/* Action Button */}
                 <div className="mt-6 pt-4 border-t flex justify-end">
-                  {canMarkDelivered(delivery) ? (
-                    <button
-                      onClick={() => handleMarkDelivered(delivery.order_id)}
-                      disabled={loading}
-                      className="bg-[#224229] text-white px-6 py-2 rounded-lg hover:bg-[#4b6250] disabled:bg-gray-400 transition-colors font-medium"
-                    >
-                      {loading ? (
-                        <div className="flex items-center">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                          Processing...
-                        </div>
-                      ) : (
-                        'Mark as Delivered'
-                      )}
-                    </button>
-                  ) : (
-                    <div className="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-600 rounded-lg">
-                      <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
-                      {delivery.agent_confirmed ? 'Agent Confirmed' : 'Completed'}
-                    </div>
-                  )}
+                  {getActionButton(order)}
                 </div>
               </div>
             </div>

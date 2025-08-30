@@ -2748,25 +2748,48 @@ END;
 -- Seller procedures
 
 -- 1. Get Seller Statistics (Total Plants, Total Sales, Total Earnings)
-CREATE OR REPLACE PROCEDURE get_seller_stats (
+
+CREATE OR REPLACE PROCEDURE get_seller_plants(
     p_seller_id IN NUMBER,
     p_cursor OUT SYS_REFCURSOR
 ) AS
 BEGIN
     OPEN p_cursor FOR
     SELECT 
-        (SELECT COUNT(*) FROM plants WHERE seller_id = p_seller_id AND is_active = 1) AS total_plants,
-        (SELECT NVL(SUM(oi.quantity), 0) FROM order_items oi 
-         JOIN plants p ON oi.plant_id = p.plant_id 
+        p.plant_id,
+        p.name AS plant_name,
+        -- Handle CLOB by converting to VARCHAR2 with substr
+        DBMS_LOB.SUBSTR(p.description, 4000, 1) AS description,
+        p.base_price,
+        p.stock_quantity,
+        p.created_at,
+        p.updated_at,
+        p.is_active,
+        -- Get primary image
+        (SELECT image_url FROM plant_images WHERE plant_id = p.plant_id AND is_primary = 1 AND ROWNUM = 1) AS primary_image,
+        -- Get all categories as comma-separated list
+        LISTAGG(pc.name, ', ') WITHIN GROUP (ORDER BY pc.name) AS categories,
+        -- Get all sizes
+        (SELECT LISTAGG(size_name || ' (+₹' || price_adjustment || ')', ', ') 
+         FROM plant_sizes WHERE plant_id = p.plant_id) AS available_sizes,
+        -- Get review statistics
+        NVL(AVG(r.rating), 0) AS avg_rating,
+        COUNT(r.review_id) AS total_reviews,
+        -- Get total sales
+        (SELECT NVL(SUM(oi.quantity), 0) 
+         FROM order_items oi 
          JOIN orders o ON oi.order_id = o.order_id 
-         WHERE p.seller_id = p_seller_id 
-         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) AS total_sold,
-        (SELECT NVL(SUM(oi.quantity * oi.unit_price * 0.9), 0) FROM order_items oi 
-         JOIN plants p ON oi.plant_id = p.plant_id 
-         JOIN orders o ON oi.order_id = o.order_id 
-         WHERE p.seller_id = p_seller_id 
-         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) AS total_earnings
-    FROM dual;
+         WHERE oi.plant_id = p.plant_id 
+         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) AS total_sold
+    FROM plants p
+    LEFT JOIN plant_category_mapping pcm ON p.plant_id = pcm.plant_id
+    LEFT JOIN plant_categories pc ON pcm.category_id = pc.category_id
+    LEFT JOIN reviews r ON p.plant_id = r.plant_id
+    WHERE p.seller_id = p_seller_id
+    GROUP BY 
+        p.plant_id, p.name, DBMS_LOB.SUBSTR(p.description, 4000, 1), p.base_price, p.stock_quantity,
+        p.created_at, p.updated_at, p.is_active
+    ORDER BY p.created_at DESC;
 END;
 /
 
@@ -2839,28 +2862,60 @@ END;
 /
 
 -- 5. Get Sales Records
-CREATE OR REPLACE PROCEDURE get_seller_sales (
+-- Comprehensive seller dashboard procedure
+CREATE OR REPLACE PROCEDURE get_seller_dashboard(
     p_seller_id IN NUMBER,
-    p_cursor OUT SYS_REFCURSOR
+    p_plants_cursor OUT SYS_REFCURSOR,
+    p_stats_cursor OUT SYS_REFCURSOR,
+    p_categories_cursor OUT SYS_REFCURSOR
 ) AS
 BEGIN
-    OPEN p_cursor FOR
+    -- Get seller's plants
+    OPEN p_plants_cursor FOR
     SELECT 
-        o.order_id,
-        o.order_number,
-        TO_CHAR(o.order_date, 'YYYY-MM-DD') AS order_date,
+        p.plant_id,
         p.name AS plant_name,
-        oi.quantity,
-        oi.unit_price,
-        (oi.quantity * oi.unit_price) AS total_amount,
-        (oi.quantity * oi.unit_price * 0.9) AS seller_earnings,
-        os.status_name AS order_status
-    FROM order_items oi
-    JOIN plants p ON oi.plant_id = p.plant_id
-    JOIN orders o ON oi.order_id = o.order_id
-    JOIN order_statuses os ON o.status_id = os.status_id
+        p.base_price,
+        p.stock_quantity,
+        (SELECT image_url FROM plant_images WHERE plant_id = p.plant_id AND is_primary = 1 AND ROWNUM = 1) AS image,
+        LISTAGG(pc.name, ', ') WITHIN GROUP (ORDER BY pc.name) AS categories,
+        NVL(AVG(r.rating), 0) AS avg_rating,
+        (SELECT COUNT(*) FROM reviews WHERE plant_id = p.plant_id) AS review_count,
+        (SELECT NVL(SUM(oi.quantity), 0) 
+         FROM order_items oi 
+         JOIN orders o ON oi.order_id = o.order_id 
+         WHERE oi.plant_id = p.plant_id 
+         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) AS total_sold
+    FROM plants p
+    LEFT JOIN plant_category_mapping pcm ON p.plant_id = pcm.plant_id
+    LEFT JOIN plant_categories pc ON pcm.category_id = pc.category_id
+    LEFT JOIN reviews r ON p.plant_id = r.plant_id
     WHERE p.seller_id = p_seller_id
-    ORDER BY o.order_date DESC;
+    GROUP BY p.plant_id, p.name, p.base_price, p.stock_quantity
+    ORDER BY p.created_at DESC;
+
+    -- Get seller statistics
+    OPEN p_stats_cursor FOR
+    SELECT 
+        (SELECT COUNT(*) FROM plants WHERE seller_id = p_seller_id AND is_active = 1) AS total_plants,
+        (SELECT NVL(SUM(oi.quantity), 0) FROM order_items oi 
+         JOIN plants p ON oi.plant_id = p.plant_id 
+         JOIN orders o ON oi.order_id = o.order_id 
+         WHERE p.seller_id = p_seller_id 
+         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) AS total_sales,
+        (SELECT NVL(SUM(oi.quantity * oi.unit_price * 0.9), 0) FROM order_items oi 
+         JOIN plants p ON oi.plant_id = p.plant_id 
+         JOIN orders o ON oi.order_id = o.order_id 
+         WHERE p.seller_id = p_seller_id 
+         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) AS total_earnings,
+        (SELECT COUNT(*) FROM plants WHERE seller_id = p_seller_id AND stock_quantity < 10) AS low_stock_count
+    FROM dual;
+
+    -- Get all categories for dropdown
+    OPEN p_categories_cursor FOR
+    SELECT category_id, name, description
+    FROM plant_categories
+    ORDER BY name;
 END;
 /
 
@@ -3107,7 +3162,7 @@ BEGIN
 END;
 /
 
--- Function to get all plant categories
+-- 9. Function to get all plant categories
 CREATE OR REPLACE FUNCTION get_plant_categories
 RETURN SYS_REFCURSOR
 AS
@@ -3125,36 +3180,50 @@ END;
 
 -- delivery man page
 
--- Procedure to get delivery agent dashboard information
-CREATE OR REPLACE PROCEDURE get_delivery_agent_dashboard (
+-- 1. Procedure to get delivery agent's assigned orders
+CREATE OR REPLACE PROCEDURE get_delivery_agent_orders(
     p_agent_id IN NUMBER,
-    p_all_assignments OUT SYS_REFCURSOR,
-    p_pending_assignments OUT SYS_REFCURSOR,
-    p_completed_assignments OUT SYS_REFCURSOR,
-    p_stats OUT SYS_REFCURSOR,
-    p_history OUT SYS_REFCURSOR
+    p_status IN VARCHAR2 DEFAULT NULL,
+    p_cursor OUT SYS_REFCURSOR
 ) AS
 BEGIN
-    -- 1. All assigned deliveries (pending or completed)
-    OPEN p_all_assignments FOR
+    OPEN p_cursor FOR
     SELECT 
         o.order_id,
         o.order_number,
         o.order_date,
         os.status_name AS order_status,
+        u.user_id AS customer_id,
         u.first_name || ' ' || u.last_name AS customer_name,
         u.phone AS customer_phone,
+        u.email AS customer_email,
         o.delivery_address,
-        o.total_amount,
-        o.estimated_delivery_date,
-        oa.assigned_at,
-        oa.completed_at,
-        oa.notes,
+        o.delivery_notes,
         dm.name AS delivery_method,
         dm.base_cost AS delivery_cost,
+        dm.estimated_days,
+        o.total_amount,
+        o.tracking_number,
+        o.estimated_delivery_date,
+        o.actual_delivery_date,
+        oa.assigned_at,
+        oa.completed_at,
+        oa.notes AS assignment_notes,
         dc.customer_confirmed,
         dc.agent_confirmed,
-        dc.confirmed_date
+        dc.confirmed_date,
+        -- Order items summary
+        (SELECT LISTAGG(p.name || ' (x' || oi.quantity || ')', ', ') 
+         WITHIN GROUP (ORDER BY oi.order_item_id)
+         FROM order_items oi 
+         JOIN plants p ON oi.plant_id = p.plant_id
+         WHERE oi.order_id = o.order_id) AS items_summary,
+        -- Primary image for display
+        (SELECT pi.image_url 
+         FROM order_items oi 
+         JOIN plants p ON oi.plant_id = p.plant_id
+         LEFT JOIN plant_images pi ON p.plant_id = pi.plant_id AND pi.is_primary = 1
+         WHERE oi.order_id = o.order_id AND ROWNUM = 1) AS primary_image
     FROM orders o
     JOIN order_assignments oa ON o.order_id = oa.order_id
     JOIN order_statuses os ON o.status_id = os.status_id
@@ -3162,10 +3231,25 @@ BEGIN
     JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
     LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
     WHERE oa.agent_id = p_agent_id
-    ORDER BY o.order_date DESC;
+    AND (p_status IS NULL OR os.status_name = p_status)
+    ORDER BY 
+        CASE 
+            WHEN os.status_name = 'Out for Delivery' THEN 1
+            WHEN os.status_name = 'Shipped' THEN 2
+            WHEN os.status_name = 'Processing' THEN 3
+            ELSE 4
+        END,
+        o.order_date DESC;
+END;
+/
 
-    -- 2. Pending deliveries
-    OPEN p_pending_assignments FOR
+-- 2. Procedure to get delivery agent's pending orders
+CREATE OR REPLACE PROCEDURE get_delivery_agent_pending_orders(
+    p_agent_id IN NUMBER,
+    p_cursor OUT SYS_REFCURSOR
+) AS
+BEGIN
+    OPEN p_cursor FOR
     SELECT 
         o.order_id,
         o.order_number,
@@ -3174,30 +3258,41 @@ BEGIN
         u.first_name || ' ' || u.last_name AS customer_name,
         u.phone AS customer_phone,
         o.delivery_address,
+        o.delivery_notes,
+        dm.name AS delivery_method,
         o.total_amount,
         o.estimated_delivery_date,
         oa.assigned_at,
-        dm.name AS delivery_method,
-        LISTAGG(pi.name || ' (Qty: ' || oi.quantity || ')', ', ') 
-            WITHIN GROUP (ORDER BY oi.order_item_id) AS order_items
+        -- Order items details
+        (SELECT LISTAGG(p.name || ' (Qty: ' || oi.quantity || ')', ', ') 
+         WITHIN GROUP (ORDER BY oi.order_item_id)
+         FROM order_items oi 
+         JOIN plants p ON oi.plant_id = p.plant_id
+         WHERE oi.order_id = o.order_id) AS order_items,
+        -- Customer delivery instructions if any
+        (SELECT LISTAGG(feature_text, '; ') 
+         FROM plant_features pf 
+         JOIN order_items oi ON pf.plant_id = oi.plant_id 
+         WHERE oi.order_id = o.order_id AND ROWNUM = 1) AS delivery_instructions
     FROM orders o
     JOIN order_assignments oa ON o.order_id = oa.order_id
     JOIN order_statuses os ON o.status_id = os.status_id
     JOIN users u ON o.user_id = u.user_id
     JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
-    JOIN order_items oi ON o.order_id = oi.order_id
-    JOIN plants pi ON oi.plant_id = pi.plant_id
     WHERE oa.agent_id = p_agent_id
     AND os.status_name IN ('Processing', 'Shipped', 'Out for Delivery')
     AND oa.completed_at IS NULL
-    GROUP BY 
-        o.order_id, o.order_number, o.order_date, os.status_name,
-        u.first_name, u.last_name, u.phone, o.delivery_address,
-        o.total_amount, o.estimated_delivery_date, oa.assigned_at, dm.name
-    ORDER BY o.order_date DESC;
+    ORDER BY o.estimated_delivery_date ASC, o.order_date DESC;
+END;
+/
 
-    -- 3. Completed deliveries
-    OPEN p_completed_assignments FOR
+-- 3. Procedure to get delivery agent's completed orders
+CREATE OR REPLACE PROCEDURE get_delivery_agent_completed_orders(
+    p_agent_id IN NUMBER,
+    p_cursor OUT SYS_REFCURSOR
+) AS
+BEGIN
+    OPEN p_cursor FOR
     SELECT 
         o.order_id,
         o.order_number,
@@ -3206,14 +3301,29 @@ BEGIN
         u.first_name || ' ' || u.last_name AS customer_name,
         u.phone AS customer_phone,
         o.delivery_address,
+        dm.name AS delivery_method,
         o.total_amount,
         o.actual_delivery_date,
         oa.assigned_at,
         oa.completed_at,
-        dm.name AS delivery_method,
+        oa.notes AS delivery_notes,
         dc.customer_confirmed,
         dc.agent_confirmed,
-        dc.confirmed_date
+        dc.confirmed_date,
+        -- Fixed: Use EXTRACT to calculate hours instead of direct arithmetic
+        ROUND(EXTRACT(DAY FROM (oa.completed_at - oa.assigned_at)) * 24 +
+              EXTRACT(HOUR FROM (oa.completed_at - oa.assigned_at)) +
+              EXTRACT(MINUTE FROM (oa.completed_at - oa.assigned_at)) / 60, 2) AS hours_to_complete,
+        CASE 
+            WHEN o.actual_delivery_date <= o.estimated_delivery_date THEN 'On Time'
+            ELSE 'Delayed'
+        END AS delivery_performance,
+        -- Order items summary
+        (SELECT LISTAGG(p.name || ' (x' || oi.quantity || ')', ', ') 
+         WITHIN GROUP (ORDER BY oi.order_item_id)
+         FROM order_items oi 
+         JOIN plants p ON oi.plant_id = p.plant_id
+         WHERE oi.order_id = o.order_id) AS items_summary
     FROM orders o
     JOIN order_assignments oa ON o.order_id = oa.order_id
     JOIN order_statuses os ON o.status_id = os.status_id
@@ -3224,57 +3334,153 @@ BEGIN
     AND os.status_name = 'Delivered'
     AND oa.completed_at IS NOT NULL
     ORDER BY o.actual_delivery_date DESC;
+END;
+/
 
-    -- 4. Delivery statistics
-    OPEN p_stats FOR
-    WITH agent_stats AS (
-        SELECT 
-            COUNT(*) AS total_deliveries,
-            SUM(CASE WHEN os.status_name = 'Delivered' THEN 1 ELSE 0 END) AS completed_deliveries,
-            SUM(CASE WHEN os.status_name IN ('Processing', 'Shipped', 'Out for Delivery') THEN 1 ELSE 0 END) AS pending_deliveries,
-            SUM(CASE WHEN os.status_name = 'Delivered' THEN o.total_amount * 0.05 ELSE 0 END) AS total_earnings,
-            AVG(CASE WHEN os.status_name = 'Delivered' THEN o.total_amount * 0.05 ELSE NULL END) AS avg_earnings_per_delivery
-        FROM orders o
-        JOIN order_assignments oa ON o.order_id = oa.order_id
-        JOIN order_statuses os ON o.status_id = os.status_id
-        WHERE oa.agent_id = p_agent_id
-    )
-    SELECT 
-        total_deliveries,
-        completed_deliveries,
-        pending_deliveries,
-        total_earnings,
-        avg_earnings_per_delivery,
-        ROUND((completed_deliveries / NULLIF(total_deliveries, 0)) * 100, 2) AS completion_rate
-    FROM agent_stats;
+-- 2. Fixed Procedure to get delivery agent statistics
+CREATE OR REPLACE PROCEDURE get_delivery_agent_stats(
+    p_agent_id IN NUMBER,
+    p_total_assignments OUT NUMBER,
+    p_pending_assignments OUT NUMBER,
+    p_completed_assignments OUT NUMBER,
+    p_total_earnings OUT NUMBER,
+    p_avg_delivery_time OUT NUMBER
+) AS
+BEGIN
+    -- Total assignments
+    SELECT COUNT(*) INTO p_total_assignments
+    FROM order_assignments
+    WHERE agent_id = p_agent_id;
 
-    -- 5. Delivery history (last 30 days)
-    OPEN p_history FOR
-    SELECT 
-        o.order_id,
-        o.order_number,
-        o.order_date,
-        os.status_name AS order_status,
-        u.first_name || ' ' || u.last_name AS customer_name,
-        o.delivery_address,
-        o.total_amount,
-        o.actual_delivery_date,
-        oa.completed_at,
-        dc.customer_confirmed,
-        dc.agent_confirmed,
-        dc.confirmed_date,
-        ROUND(o.total_amount * 0.05, 2) AS delivery_fee
+    -- Pending assignments
+    SELECT COUNT(*) INTO p_pending_assignments
+    FROM order_assignments oa
+    JOIN orders o ON oa.order_id = o.order_id
+    JOIN order_statuses os ON o.status_id = os.status_id
+    WHERE oa.agent_id = p_agent_id
+    AND os.status_name IN ('Processing', 'Shipped', 'Out for Delivery')
+    AND oa.completed_at IS NULL;
+
+    -- Completed assignments
+    SELECT COUNT(*) INTO p_completed_assignments
+    FROM order_assignments oa
+    JOIN orders o ON oa.order_id = o.order_id
+    JOIN order_statuses os ON o.status_id = os.status_id
+    WHERE oa.agent_id = p_agent_id
+    AND os.status_name = 'Delivered'
+    AND oa.completed_at IS NOT NULL;
+
+    -- Total earnings (5% of order total)
+    SELECT NVL(SUM(o.total_amount * 0.05), 0) INTO p_total_earnings
     FROM orders o
     JOIN order_assignments oa ON o.order_id = oa.order_id
     JOIN order_statuses os ON o.status_id = os.status_id
-    JOIN users u ON o.user_id = u.user_id
-    LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
     WHERE oa.agent_id = p_agent_id
-    AND o.order_date >= SYSDATE - 30
-    ORDER BY o.order_date DESC;
+    AND os.status_name = 'Delivered';
 
-END get_delivery_agent_dashboard;
+    -- Fixed: Average delivery time in hours using EXTRACT
+    SELECT NVL(AVG(EXTRACT(DAY FROM (oa.completed_at - oa.assigned_at)) * 24 +
+                   EXTRACT(HOUR FROM (oa.completed_at - oa.assigned_at)) +
+                   EXTRACT(MINUTE FROM (oa.completed_at - oa.assigned_at)) / 60), 0) 
+    INTO p_avg_delivery_time
+    FROM order_assignments oa
+    JOIN orders o ON oa.order_id = o.order_id
+    JOIN order_statuses os ON o.status_id = os.status_id
+    WHERE oa.agent_id = p_agent_id
+    AND os.status_name = 'Delivered'
+    AND oa.completed_at IS NOT NULL;
+END;
 /
+
+-- 5. Procedure to update delivery status
+CREATE OR REPLACE PROCEDURE update_delivery_status(
+    p_order_id IN NUMBER,
+    p_agent_id IN NUMBER,
+    p_status IN VARCHAR2,
+    p_notes IN VARCHAR2 DEFAULT NULL,
+    p_success OUT NUMBER,
+    p_message OUT VARCHAR2
+) AS
+    v_current_status VARCHAR2(50);
+    v_valid_agent NUMBER;
+BEGIN
+    -- Check if agent is assigned to this order
+    SELECT COUNT(*) INTO v_valid_agent
+    FROM order_assignments
+    WHERE order_id = p_order_id AND agent_id = p_agent_id;
+
+    IF v_valid_agent = 0 THEN
+        p_success := 0;
+        p_message := 'Order not assigned to this delivery agent';
+        RETURN;
+    END IF;
+
+    -- Get current status
+    SELECT os.status_name INTO v_current_status
+    FROM orders o
+    JOIN order_statuses os ON o.status_id = os.status_id
+    WHERE o.order_id = p_order_id;
+
+    -- Update status based on the requested action
+    IF p_status = 'PICKED_UP' AND v_current_status = 'Processing' THEN
+        UPDATE orders
+        SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Shipped')
+        WHERE order_id = p_order_id;
+        
+        p_success := 1;
+        p_message := 'Order picked up successfully';
+
+    ELSIF p_status = 'OUT_FOR_DELIVERY' AND v_current_status = 'Shipped' THEN
+        UPDATE orders
+        SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Out for Delivery')
+        WHERE order_id = p_order_id;
+        
+        p_success := 1;
+        p_message := 'Order out for delivery';
+
+    ELSIF p_status = 'DELIVERED' AND v_current_status = 'Out for Delivery' THEN
+        -- Mark assignment as completed
+        UPDATE order_assignments
+        SET completed_at = SYSTIMESTAMP,
+            notes = NVL(p_notes, notes)
+        WHERE order_id = p_order_id;
+
+        -- Update order status to delivered
+        UPDATE orders
+        SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
+            actual_delivery_date = SYSTIMESTAMP
+        WHERE order_id = p_order_id;
+
+        -- Create delivery confirmation record
+        MERGE INTO delivery_confirmations dc
+        USING (SELECT p_order_id AS order_id FROM dual) src
+        ON (dc.order_id = src.order_id)
+        WHEN MATCHED THEN
+            UPDATE SET agent_confirmed = 1,
+                      confirmed_date = CASE WHEN customer_confirmed = 1 THEN SYSTIMESTAMP ELSE confirmed_date END
+        WHEN NOT MATCHED THEN
+            INSERT (order_id, user_id, agent_id, agent_confirmed)
+            SELECT p_order_id, o.user_id, p_agent_id, 1
+            FROM orders o
+            WHERE o.order_id = p_order_id;
+        
+        p_success := 1;
+        p_message := 'Order delivered successfully';
+
+    ELSE
+        p_success := 0;
+        p_message := 'Invalid status transition from ' || v_current_status || ' to ' || p_status;
+    END IF;
+
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        p_success := 0;
+        p_message := 'Error updating delivery status: ' || SQLERRM;
+END;
+/
+
 
 -- Procedure for delivery agent to mark delivery as delivered
 CREATE OR REPLACE PROCEDURE mark_delivery_delivered (

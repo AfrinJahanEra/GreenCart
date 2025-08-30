@@ -1,11 +1,11 @@
 // src/pages/delivery/Dashboard.jsx
-import { useOutletContext } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useDeliveryAgent } from '../../hooks/useDeliveryAgent';
 import { theme } from '../../theme';
 
 const Dashboard = () => {
   const { user } = useAuth();
-  const { dashboardData, loading } = useOutletContext();
+  const { dashboardData, loading, error, refreshAllData } = useDeliveryAgent(user?.user_id);
   
   const stats = dashboardData?.stats || {};
   const agentInfo = dashboardData?.agent_info || {};
@@ -27,7 +27,7 @@ const Dashboard = () => {
   const vehicleInfo = agentInfo.vehicle_type ? 
     `Vehicle: ${agentInfo.vehicle_type}` : 'Vehicle: Not specified';
 
-  if (loading) {
+  if (loading.dashboard) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#224229]"></div>
@@ -37,6 +37,19 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
+      {error.dashboard && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
+          <div className="flex justify-between items-center">
+            <span>Error: {error.dashboard}</span>
+            <button
+              onClick={refreshAllData}
+              className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
       {/* Personal Information Header */}
       <div className="bg-white rounded-lg shadow p-6">
         <div className="flex items-center gap-4">

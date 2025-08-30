@@ -13,6 +13,7 @@ import Dashboard from './pages/seller/Dashboard';
 import Plants from './pages/seller/Plants';
 import Sales from './pages/seller/Sales';
 import AddPlant from './pages/seller/AddPlant';
+import EditPlant from './pages/seller/EditPlant';
 import RecordSale from './pages/seller/RecordSale';
 import DeliveryDashboard from './pages/DeliveryDashboard';
 import DashboardDel from './pages/delivery/Dashboard';
@@ -76,6 +77,7 @@ function App() {
               <Route path="plants" element={<Plants />} />
               <Route path="sales" element={<Sales />} />
               <Route path="add-plant" element={<AddPlant />} />
+              <Route path="edit-plant/:plantId" element={<EditPlant />} />
               <Route path="record-sale" element={<RecordSale />} />
             </Route>
             

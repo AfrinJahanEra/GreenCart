@@ -4,17 +4,23 @@ import { sellerAPI } from '../services/api';
 import { handleApiError } from '../utils/errorHandler';
 
 export const useSellerDashboard = (sellerId) => {
-
   const [dashboardData, setDashboardData] = useState({
-  stats: null,
-  recentSales: [],
-  lowStockPlants: [],
-  plants: [],  // Ensure plants is always an array
-  salesRecords: [],
-  categories: []
-});
+    stats: {
+      total_plants: 0,
+      total_sold: 0,
+      total_earnings: 0,
+      low_stock_count: 0
+    },
+    recentSales: [],
+    lowStockPlants: [],
+    plants: [],
+    salesRecords: [],
+    categories: [],
+    sellerInfo: null
+  });
   
   const [loading, setLoading] = useState({
+    dashboard: false,
     stats: false,
     recentSales: false,
     lowStockPlants: false,
@@ -26,6 +32,7 @@ export const useSellerDashboard = (sellerId) => {
   });
   
   const [error, setError] = useState({
+    dashboard: null,
     stats: null,
     recentSales: null,
     lowStockPlants: null,
@@ -36,8 +43,58 @@ export const useSellerDashboard = (sellerId) => {
     updatePlant: null
   });
 
-  // Fetch seller stats
+  console.log('useSellerDashboard initialized with sellerId:', sellerId);
+
+  // Comprehensive dashboard fetch - gets all data in one call
+  const fetchCompleteDashboard = async () => {
+    if (!sellerId) {
+      console.warn('No seller ID provided');
+      return;
+    }
+
+    try {
+      console.log('Fetching complete dashboard for seller:', sellerId);
+      setLoading(prev => ({ ...prev, dashboard: true }));
+      setError(prev => ({ ...prev, dashboard: null }));
+      
+      const response = await sellerAPI.getSellerDashboard(sellerId);
+      console.log('Dashboard API response:', response.data);
+      
+      if (response.data.success) {
+        const data = response.data.data;
+        console.log('Setting dashboard data:', data);
+        
+        setDashboardData(prev => ({
+          ...prev,
+          stats: data.stats || prev.stats,
+          recentSales: Array.isArray(data.recent_sales) ? data.recent_sales : [],
+          lowStockPlants: Array.isArray(data.low_stock_plants) ? data.low_stock_plants : [],
+          plants: Array.isArray(data.all_plants) ? data.all_plants : [],
+        }));
+        
+        // Also fetch categories and sales records separately
+        await Promise.all([
+          fetchCategories(),
+          fetchSalesRecords()
+        ]);
+        
+      } else {
+        console.error('Dashboard API returned error:', response.data.error);
+        setError(prev => ({ ...prev, dashboard: response.data.error || 'Failed to fetch dashboard' }));
+      }
+    } catch (err) {
+      const errorMessage = handleApiError(err);
+      console.error('Error fetching complete dashboard:', err);
+      setError(prev => ({ ...prev, dashboard: errorMessage }));
+    } finally {
+      setLoading(prev => ({ ...prev, dashboard: false }));
+    }
+  };
+
+  // Individual fetch functions (backup for specific data refresh)
   const fetchSellerStats = async () => {
+    if (!sellerId) return;
+    
     try {
       setLoading(prev => ({ ...prev, stats: true }));
       setError(prev => ({ ...prev, stats: null }));
@@ -58,8 +115,9 @@ export const useSellerDashboard = (sellerId) => {
     }
   };
 
-  // Fetch recent sales
   const fetchRecentSales = async () => {
+    if (!sellerId) return;
+    
     try {
       setLoading(prev => ({ ...prev, recentSales: true }));
       setError(prev => ({ ...prev, recentSales: null }));
@@ -80,8 +138,9 @@ export const useSellerDashboard = (sellerId) => {
     }
   };
 
-  // Fetch low stock plants
   const fetchLowStockPlants = async () => {
+    if (!sellerId) return;
+    
     try {
       setLoading(prev => ({ ...prev, lowStockPlants: true }));
       setError(prev => ({ ...prev, lowStockPlants: null }));
@@ -102,39 +161,42 @@ export const useSellerDashboard = (sellerId) => {
     }
   };
 
-  // Fetch seller plants
-  // src/hooks/useSellerDashboard.js - Add this at the beginning
-// Update the initial state to include empty arrays
-
-
-// In each fetch function, ensure we set empty arrays on error
-const fetchSellerPlants = async () => {
-  try {
-    setLoading(prev => ({ ...prev, plants: true }));
-    setError(prev => ({ ...prev, plants: null }));
+  const fetchSellerPlants = async () => {
+    if (!sellerId) return;
     
-    const response = await sellerAPI.getSellerPlants(sellerId);
-    
-    if (response.data.success) {
-      setDashboardData(prev => ({ 
-        ...prev, 
-        plants: response.data.data || []  // Ensure it's always an array
-      }));
-    } else {
-      throw new Error(response.data.error || 'Failed to fetch plants');
+    try {
+      setLoading(prev => ({ ...prev, plants: true }));
+      setError(prev => ({ ...prev, plants: null }));
+      
+      console.log('Fetching plants for seller:', sellerId);
+      const response = await sellerAPI.getSellerPlants(sellerId);
+      console.log('Plants API response:', response.data);
+      
+      if (response.data.success) {
+        const plantsData = response.data.data || [];
+        console.log('Plants data received:', plantsData);
+        setDashboardData(prev => ({ 
+          ...prev, 
+          plants: Array.isArray(plantsData) ? plantsData : []
+        }));
+      } else {
+        console.warn('Failed to fetch plants:', response.data.error || response.data.message);
+        setDashboardData(prev => ({ ...prev, plants: [] }));
+        setError(prev => ({ ...prev, plants: response.data.error || response.data.message || 'Failed to fetch plants' }));
+      }
+    } catch (err) {
+      const errorMessage = handleApiError(err);
+      console.error('Error fetching plants:', err);
+      setError(prev => ({ ...prev, plants: errorMessage }));
+      setDashboardData(prev => ({ ...prev, plants: [] }));
+    } finally {
+      setLoading(prev => ({ ...prev, plants: false }));
     }
-  } catch (err) {
-    const errorMessage = handleApiError(err);
-    setError(prev => ({ ...prev, plants: errorMessage }));
-    setDashboardData(prev => ({ ...prev, plants: [] })); // Set empty array on error
-    console.error('Error fetching plants:', err);
-  } finally {
-    setLoading(prev => ({ ...prev, plants: false }));
-  }
-};
+  };
 
-  // Fetch sales records
   const fetchSalesRecords = async () => {
+    if (!sellerId) return;
+    
     try {
       setLoading(prev => ({ ...prev, salesRecords: true }));
       setError(prev => ({ ...prev, salesRecords: null }));
@@ -155,7 +217,6 @@ const fetchSellerPlants = async () => {
     }
   };
 
-  // Fetch categories
   const fetchCategories = async () => {
     try {
       setLoading(prev => ({ ...prev, categories: true }));
@@ -164,14 +225,21 @@ const fetchSellerPlants = async () => {
       const response = await sellerAPI.getCategories();
       
       if (response.data.success) {
-        setDashboardData(prev => ({ ...prev, categories: response.data.categories }));
+        const categoriesData = response.data.categories || [];
+        setDashboardData(prev => ({ 
+          ...prev, 
+          categories: Array.isArray(categoriesData) ? categoriesData : []
+        }));
       } else {
-        throw new Error(response.data.error || 'Failed to fetch categories');
+        console.warn('Failed to fetch categories:', response.data.error);
+        setDashboardData(prev => ({ ...prev, categories: [] }));
+        setError(prev => ({ ...prev, categories: response.data.error || 'Failed to fetch categories' }));
       }
     } catch (err) {
       const errorMessage = handleApiError(err);
-      setError(prev => ({ ...prev, categories: errorMessage }));
       console.error('Error fetching categories:', err);
+      setError(prev => ({ ...prev, categories: errorMessage }));
+      setDashboardData(prev => ({ ...prev, categories: [] }));
     } finally {
       setLoading(prev => ({ ...prev, categories: false }));
     }
@@ -265,22 +333,62 @@ const fetchSellerPlants = async () => {
     }
   };
 
+  // Record manual sale
+  const recordManualSale = async (saleData) => {
+    try {
+      const response = await sellerAPI.recordManualSale(saleData);
+      
+      if (response.data.success) {
+        // Refresh data after recording sale
+        await Promise.all([
+          fetchSellerStats(),
+          fetchRecentSales(),
+          fetchSellerPlants(),
+          fetchSalesRecords()
+        ]);
+        return { success: true, data: response.data };
+      } else {
+        throw new Error(response.data.error || 'Failed to record sale');
+      }
+    } catch (err) {
+      const errorMessage = handleApiError(err);
+      return { success: false, error: errorMessage };
+    }
+  };
+
+  // Get plant details for editing
+  const getPlantDetails = async (plantId) => {
+    try {
+      const response = await sellerAPI.getPlantDetails(plantId);
+      
+      if (response.data.success) {
+        return { success: true, data: response.data.data };
+      } else {
+        throw new Error(response.data.error || 'Failed to fetch plant details');
+      }
+    } catch (err) {
+      const errorMessage = handleApiError(err);
+      return { success: false, error: errorMessage };
+    }
+  };
+
   // Refresh all data
   const refreshAllData = async () => {
-    await Promise.all([
-      fetchSellerStats(),
-      fetchRecentSales(),
-      fetchLowStockPlants(),
-      fetchSellerPlants(),
-      fetchSalesRecords(),
-      fetchCategories()
-    ]);
+    console.log('Refreshing all seller dashboard data');
+    await fetchCompleteDashboard();
   };
+
+  // Refresh specific data sections
+  const refreshPlants = () => fetchSellerPlants();
+  const refreshStats = () => fetchSellerStats();
+  const refreshSales = () => fetchSalesRecords();
+  const refreshCategories = () => fetchCategories();
 
   // Initial data fetch
   useEffect(() => {
+    console.log('useSellerDashboard useEffect triggered, sellerId:', sellerId);
     if (sellerId) {
-      refreshAllData();
+      fetchCompleteDashboard();
     }
   }, [sellerId]);
 
@@ -288,15 +396,26 @@ const fetchSellerPlants = async () => {
     dashboardData,
     loading,
     error,
+    // Main functions
+    fetchCompleteDashboard,
+    refreshAllData,
+    // Individual refresh functions
+    refreshPlants,
+    refreshStats,
+    refreshSales,
+    refreshCategories,
+    // Individual fetch functions
     fetchSellerStats,
     fetchRecentSales,
     fetchLowStockPlants,
     fetchSellerPlants,
     fetchSalesRecords,
     fetchCategories,
+    // Plant management
     addPlant,
     updatePlant,
     uploadImages,
-    refreshAllData
+    recordManualSale,
+    getPlantDetails
   };
 };

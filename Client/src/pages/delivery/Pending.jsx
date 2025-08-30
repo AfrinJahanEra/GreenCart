@@ -1,19 +1,44 @@
 // src/pages/delivery/Pending.jsx
-import { useOutletContext } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
+import { useDeliveryAgent } from '../../hooks/useDeliveryAgent';
 import { theme } from '../../theme';
 
 const Pending = () => {
-  const { dashboardData, onStatusChange, loading } = useOutletContext();
+  const { user } = useAuth();
+  const { fetchPendingOrders, markDeliveryCompleted, loading, error } = useDeliveryAgent(user?.user_id);
+  const [pendingDeliveries, setPendingDeliveries] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   
-  // Show all pending deliveries assigned to this agent (all non-completed statuses)
-  const pendingDeliveries = dashboardData?.pending_assignments || [];
+  // Fetch pending deliveries on component mount
+  useEffect(() => {
+    const loadPendingDeliveries = async () => {
+      if (user?.user_id) {
+        setIsLoading(true);
+        try {
+          const orders = await fetchPendingOrders();
+          console.log('Fetched pending deliveries:', orders);
+          setPendingDeliveries(orders || []);
+        } catch (err) {
+          console.error('Error loading pending deliveries:', err);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadPendingDeliveries();
+  }, [user?.user_id, fetchPendingOrders]);
 
   const handleMarkDelivered = async (orderId) => {
-    const result = await onStatusChange(orderId, 'Delivery completed by agent');
+    const result = await markDeliveryCompleted(orderId, 'Delivery completed by agent');
     if (!result.success) {
       alert(`Error: ${result.error}`);
     } else {
       alert('Delivery marked as completed! Waiting for customer confirmation.');
+      // Refresh the pending deliveries list
+      const updatedOrders = await fetchPendingOrders();
+      setPendingDeliveries(updatedOrders || []);
     }
   };
 
@@ -57,11 +82,38 @@ const Pending = () => {
     return delivery.order_status !== 'Delivered' && !delivery.agent_confirmed;
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#224229]"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="overflow-x-auto">
-      <h1 className="text-2xl font-bold mb-6" style={{ color: theme.colors.primary }}>
-        Pending Deliveries ({pendingDeliveries.length})
-      </h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold" style={{ color: theme.colors.primary }}>
+          Pending Deliveries ({pendingDeliveries.length})
+        </h1>
+        <button
+          onClick={async () => {
+            setIsLoading(true);
+            const orders = await fetchPendingOrders();
+            setPendingDeliveries(orders || []);
+            setIsLoading(false);
+          }}
+          className="bg-[#224229] text-white px-4 py-2 rounded-lg hover:bg-[#4b6250] transition-colors text-sm"
+        >
+          Refresh
+        </button>
+      </div>
+      
+      {error.orders && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
+          Error: {error.orders}
+        </div>
+      )}
       
       {pendingDeliveries.length === 0 ? (
         <div className="text-center py-10 bg-white rounded-lg shadow">
@@ -184,10 +236,10 @@ const Pending = () => {
                   {canMarkDelivered(delivery) ? (
                     <button
                       onClick={() => handleMarkDelivered(delivery.order_id)}
-                      disabled={loading}
+                      disabled={loading.markDelivery}
                       className="bg-[#224229] text-white px-6 py-2 rounded-lg hover:bg-[#4b6250] disabled:bg-gray-400 transition-colors font-medium"
                     >
-                      {loading ? (
+                      {loading.markDelivery ? (
                         <div className="flex items-center">
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                           Processing...

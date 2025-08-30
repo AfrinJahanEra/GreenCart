@@ -117,34 +117,69 @@ export const adminAPI = {
 };
 
 export const sellerAPI = {
-  getSellerStats: (sellerId) => api.get(`/seller/seller/${sellerId}/stats/`),
-  getRecentSales: (sellerId) => api.get(`/seller/seller/${sellerId}/recent-sales/`),
-  getLowStockPlants: (sellerId) => api.get(`/seller/seller/${sellerId}/low-stock/`),
+  // Dashboard - All data in one call
+  getSellerDashboard: (sellerId) => api.get(`/seller/${sellerId}/dashboard/`),
+  
+  // Individual endpoints
+  getSellerStats: (sellerId) => api.get(`/seller/${sellerId}/stats/`),
+  getRecentSales: (sellerId) => api.get(`/seller/${sellerId}/recent-sales/`),
+  getLowStockPlants: (sellerId) => api.get(`/seller/${sellerId}/low-stock/`),
   getSellerPlants: (sellerId) => api.get(`/seller/${sellerId}/plants/`),
-  getSalesRecords: (sellerId) => api.get(`/seller/seller/${sellerId}/sales/`),
+  getSalesRecords: (sellerId) => api.get(`/seller/${sellerId}/sales/`),
+  
+  // Plant management
   addPlant: (plantData) => api.post('/seller/plants/add/', plantData),
   updatePlant: (plantId, plantData) => api.put(`/seller/plants/${plantId}/update/`, plantData),
   getPlantDetails: (plantId) => api.get(`/seller/plants/${plantId}/`),
+  
+  // Utilities
+  recordManualSale: (saleData) => api.post('/seller/record-sale/', saleData),
+  getCategories: () => api.get('/seller/categories/'),
   uploadImages: (formData) => {
     const config = {
       headers: {
         'Content-Type': 'multipart/form-data',
       }
     };
-    return api.post('/seller/plants/upload-images/', formData, config);
+    return api.post('/seller/upload-images/', formData, config);
   },
-  getCategories: () => api.get('/categories/'),
+  debugSeller: (sellerId) => api.get(`/seller/${sellerId}/debug/`),
 };
 
 // src/services/api.js - Add delivery agent API functions
 export const deliveryAgentAPI = {
+  // Dashboard and stats
   getDashboard: (agentId) => api.get(`/delivery_agent/dashboard/${agentId}/`),
+  getStats: (agentId) => api.get(`/delivery_agent/stats/${agentId}/`),
+  
+  // Orders management
+  getAllOrders: (agentId, status = null) => {
+    const url = status 
+      ? `/delivery_agent/orders/${agentId}/?status=${status}`
+      : `/delivery_agent/orders/${agentId}/`;
+    return api.get(url);
+  },
+  getPendingOrders: (agentId) => api.get(`/delivery_agent/pending-orders/${agentId}/`),
+  getCompletedOrders: (agentId) => api.get(`/delivery_agent/completed-orders/${agentId}/`),
+  
+  // Delivery actions
+  updateDeliveryStatus: (data) => api.post('/delivery_agent/update-status/', data),
   markDeliveryCompleted: (data) => api.post('/delivery_agent/mark-delivered/', data),
   confirmDelivery: (data) => api.post('/delivery_agent/confirm-delivery/', data),
-  getAssignmentCount: (agentId, status) => 
-    api.get(`/delivery_agent/assignment-count/${agentId}/?status=${status || ''}`),
-  getMonthlyEarnings: (agentId, year) => 
-    api.get(`/delivery_agent/monthly-earnings/${agentId}/?year=${year || ''}`),
+  
+  // Statistics and earnings
+  getAssignmentCount: (agentId, status = null) => {
+    const url = status 
+      ? `/delivery_agent/assignment-count/${agentId}/?status=${status}`
+      : `/delivery_agent/assignment-count/${agentId}/`;
+    return api.get(url);
+  },
+  getMonthlyEarnings: (agentId, year = null) => {
+    const url = year 
+      ? `/delivery_agent/monthly-earnings/${agentId}/?year=${year}`
+      : `/delivery_agent/monthly-earnings/${agentId}/`;
+    return api.get(url);
+  },
 };
 
 

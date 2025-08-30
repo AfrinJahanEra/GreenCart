@@ -1,166 +1,315 @@
 # delivery_agent/views.py
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.db import connection
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 import json
-from django.shortcuts import get_object_or_404
 
 def dictfetchall(cursor):
-    """Return all rows from a cursor as a dict"""
-    columns = [col[0] for col in cursor.description]
+    """Return all rows from a cursor as a list of dictionaries with lowercase column names"""
+    columns = [col[0].lower() for col in cursor.description]
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
 @csrf_exempt
+@require_http_methods(["GET"])
 def delivery_agent_dashboard(request, agent_id):
-    if request.method == 'GET':
-        try:
-            with connection.cursor() as cursor:
-                # First, check if agent_id is actually user_id and convert to agent_id
-                # Check if this is a user_id by looking for delivery agent record
-                cursor.execute("""
-                    SELECT da.agent_id, da.user_id 
-                    FROM delivery_agents da 
-                    WHERE da.user_id = %s OR da.agent_id = %s
-                """, [agent_id, agent_id])
-                
-                agent_record = cursor.fetchone()
-                if not agent_record:
-                    return JsonResponse({
-                        'success': False,
-                        'error': 'Delivery agent not found'
-                    }, status=404)
-                
-                actual_agent_id = agent_record[0]
-                actual_user_id = agent_record[1]
-                
-                results = {}
-                
-                # Get delivery agent personal info with enhanced details
-                cursor.execute("""
-                    SELECT 
-                        da.agent_id,
-                        u.user_id,
-                        u.first_name,
-                        u.last_name,
-                        u.first_name || ' ' || u.last_name AS full_name,
-                        u.email,
-                        u.phone,
-                        u.address,
-                        u.created_at AS user_created_at,
-                        da.vehicle_type,
-                        da.license_number,
-                        da.is_active,
-                        r.role_name,
-                        -- Calculate agent performance metrics
-                        (SELECT COUNT(*) FROM order_assignments oa2 WHERE oa2.agent_id = da.agent_id) AS total_assignments,
-                        (SELECT COUNT(*) FROM order_assignments oa2 
-                         JOIN orders o2 ON oa2.order_id = o2.order_id 
-                         JOIN order_statuses os2 ON o2.status_id = os2.status_id 
-                         WHERE oa2.agent_id = da.agent_id AND os2.status_name = 'Delivered') AS completed_assignments,
-                        (SELECT ROUND(AVG(o2.total_amount * 0.05), 2) FROM order_assignments oa2 
-                         JOIN orders o2 ON oa2.order_id = o2.order_id 
-                         JOIN order_statuses os2 ON o2.status_id = os2.status_id 
-                         WHERE oa2.agent_id = da.agent_id AND os2.status_name = 'Delivered') AS avg_delivery_fee
-                    FROM delivery_agents da
-                    JOIN users u ON da.user_id = u.user_id
-                    LEFT JOIN user_roles ur ON u.user_id = ur.user_id
-                    LEFT JOIN roles r ON ur.role_id = r.role_id
-                    WHERE da.agent_id = %s AND da.user_id = %s
-                """, [actual_agent_id, actual_user_id])
-                
-                agent_info = dictfetchall(cursor)
-                print(f"DEBUG - Agent Info Raw Result: {agent_info}")
-                
-                if agent_info:
-                    results['agent_info'] = agent_info[0]
-                else:
-                    # Fallback query using just agent_id with minimal info
-                    cursor.execute("""
-                        SELECT 
-                            da.agent_id,
-                            u.user_id,
-                            u.first_name,
-                            u.last_name,
-                            u.first_name || ' ' || u.last_name AS full_name,
-                            u.email,
-                            u.phone,
-                            u.address,
-                            da.vehicle_type,
-                            da.license_number,
-                            da.is_active,
-                            'delivery_agent' AS role_name,
-                            0 AS total_assignments,
-                            0 AS completed_assignments,
-                            0 AS avg_delivery_fee
-                        FROM delivery_agents da
-                        JOIN users u ON da.user_id = u.user_id
-                        WHERE da.agent_id = %s
-                    """, [actual_agent_id])
-                    
-                    agent_info_fallback = dictfetchall(cursor)
-                    print(f"DEBUG - Agent Info Fallback Result: {agent_info_fallback}")
-                    
-                    results['agent_info'] = agent_info_fallback[0] if agent_info_fallback else {
-                        'agent_id': actual_agent_id,
-                        'user_id': actual_user_id,
-                        'first_name': 'Unknown',
-                        'last_name': 'Agent',
-                        'full_name': 'Unknown Agent',
-                        'email': 'N/A',
-                        'phone': 'N/A',
-                        'address': 'N/A',
-                        'vehicle_type': 'N/A',
-                        'license_number': 'N/A',
-                        'is_active': 0,
-                        'role_name': 'delivery_agent',
-                        'total_assignments': 0,
-                        'completed_assignments': 0,
-                        'avg_delivery_fee': 0
-                    }
-                
-                # 1. All assigned deliveries
+    """Get delivery agent dashboard with all data - using direct SQL queries"""
+    try:
+        with connection.cursor() as cursor:
+            # Convert user_id to agent_id if needed
+            cursor.execute("""
+                SELECT da.agent_id 
+                FROM delivery_agents da 
+                WHERE da.user_id = %s OR da.agent_id = %s
+            """, [agent_id, agent_id])
+            
+            agent_record = cursor.fetchone()
+            if not agent_record:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Delivery agent not found'
+                }, status=404)
+            
+            actual_agent_id = agent_record[0]
+            
+            # 1. Get agent statistics using direct SQL queries
+            # Total assignments
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM order_assignments
+                WHERE agent_id = %s
+            """, [actual_agent_id])
+            total_assignments = cursor.fetchone()[0] or 0
+
+            # Pending assignments
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM order_assignments oa
+                JOIN orders o ON oa.order_id = o.order_id
+                JOIN order_statuses os ON o.status_id = os.status_id
+                WHERE oa.agent_id = %s
+                AND os.status_name IN ('Processing', 'Shipped', 'Out for Delivery')
+                AND oa.completed_at IS NULL
+            """, [actual_agent_id])
+            pending_assignments = cursor.fetchone()[0] or 0
+
+            # Completed assignments
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM order_assignments oa
+                JOIN orders o ON oa.order_id = o.order_id
+                JOIN order_statuses os ON o.status_id = os.status_id
+                WHERE oa.agent_id = %s
+                AND os.status_name = 'Delivered'
+                AND oa.completed_at IS NOT NULL
+            """, [actual_agent_id])
+            completed_assignments = cursor.fetchone()[0] or 0
+
+            # Total earnings (5% of order total)
+            cursor.execute("""
+                SELECT NVL(SUM(o.total_amount * 0.05), 0) 
+                FROM orders o
+                JOIN order_assignments oa ON o.order_id = oa.order_id
+                JOIN order_statuses os ON o.status_id = os.status_id
+                WHERE oa.agent_id = %s
+                AND os.status_name = 'Delivered'
+            """, [actual_agent_id])
+            total_earnings = cursor.fetchone()[0] or 0
+
+            # Average delivery time in hours
+            cursor.execute("""
+                SELECT NVL(AVG(EXTRACT(DAY FROM (oa.completed_at - oa.assigned_at)) * 24 +
+                               EXTRACT(HOUR FROM (oa.completed_at - oa.assigned_at)) +
+                               EXTRACT(MINUTE FROM (oa.completed_at - oa.assigned_at)) / 60), 0) 
+                FROM order_assignments oa
+                JOIN orders o ON oa.order_id = o.order_id
+                JOIN order_statuses os ON o.status_id = os.status_id
+                WHERE oa.agent_id = %s
+                AND os.status_name = 'Delivered'
+                AND oa.completed_at IS NOT NULL
+            """, [actual_agent_id])
+            avg_delivery_time = cursor.fetchone()[0] or 0
+
+            # 2. Get pending orders using direct SQL
+            cursor.execute("""
+                SELECT 
+                    o.order_id,
+                    o.order_number,
+                    o.order_date,
+                    os.status_name AS order_status,
+                    u.first_name || ' ' || u.last_name AS customer_name,
+                    u.phone AS customer_phone,
+                    o.delivery_address,
+                    o.delivery_notes,
+                    dm.name AS delivery_method,
+                    o.total_amount,
+                    o.estimated_delivery_date,
+                    oa.assigned_at,
+                    -- Order items details
+                    (SELECT LISTAGG(p.name || ' (Qty: ' || oi.quantity || ')', ', ') 
+                     WITHIN GROUP (ORDER BY oi.order_item_id)
+                     FROM order_items oi 
+                     JOIN plants p ON oi.plant_id = p.plant_id
+                     WHERE oi.order_id = o.order_id) AS order_items
+                FROM orders o
+                JOIN order_assignments oa ON o.order_id = oa.order_id
+                JOIN order_statuses os ON o.status_id = os.status_id
+                JOIN users u ON o.user_id = u.user_id
+                JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
+                WHERE oa.agent_id = %s
+                AND os.status_name IN ('Processing', 'Shipped', 'Out for Delivery')
+                AND oa.completed_at IS NULL
+                ORDER BY o.estimated_delivery_date ASC, o.order_date DESC
+            """, [actual_agent_id])
+            
+            pending_orders = dictfetchall(cursor)
+
+            # 3. Get completed orders using direct SQL
+            cursor.execute("""
+                SELECT 
+                    o.order_id,
+                    o.order_number,
+                    o.order_date,
+                    os.status_name AS order_status,
+                    u.first_name || ' ' || u.last_name AS customer_name,
+                    u.phone AS customer_phone,
+                    o.delivery_address,
+                    dm.name AS delivery_method,
+                    o.total_amount,
+                    o.actual_delivery_date,
+                    oa.assigned_at,
+                    oa.completed_at,
+                    oa.notes AS delivery_notes,
+                    dc.customer_confirmed,
+                    dc.agent_confirmed,
+                    dc.confirmed_date,
+                    -- Delivery performance
+                    CASE 
+                        WHEN o.actual_delivery_date <= o.estimated_delivery_date THEN 'On Time'
+                        ELSE 'Delayed'
+                    END AS delivery_performance,
+                    -- Order items summary
+                    (SELECT LISTAGG(p.name || ' (x' || oi.quantity || ')', ', ') 
+                     WITHIN GROUP (ORDER BY oi.order_item_id)
+                     FROM order_items oi 
+                     JOIN plants p ON oi.plant_id = p.plant_id
+                     WHERE oi.order_id = o.order_id) AS items_summary
+                FROM orders o
+                JOIN order_assignments oa ON o.order_id = oa.order_id
+                JOIN order_statuses os ON o.status_id = os.status_id
+                JOIN users u ON o.user_id = u.user_id
+                JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
+                LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
+                WHERE oa.agent_id = %s
+                AND os.status_name = 'Delivered'
+                AND oa.completed_at IS NOT NULL
+                ORDER BY o.actual_delivery_date DESC
+            """, [actual_agent_id])
+            
+            completed_orders = dictfetchall(cursor)
+
+            return JsonResponse({
+                'success': True,
+                'data': {
+                    'stats': {
+                        'total_assignments': total_assignments,
+                        'pending_assignments': pending_assignments,
+                        'completed_assignments': completed_assignments,
+                        'total_earnings': float(total_earnings),
+                        'avg_delivery_time': float(avg_delivery_time)
+                    },
+                    'pending_orders': pending_orders or [],
+                    'completed_orders': completed_orders[:10] if completed_orders else []
+                }
+            })
+            
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"Dashboard Error: {error_traceback}")
+        return JsonResponse({
+            'success': False,
+            'error': f'Dashboard error: {str(e)}',
+            'traceback': error_traceback
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def delivery_agent_orders(request, agent_id):
+    """Get all orders for a delivery agent using direct SQL"""
+    try:
+        status = request.GET.get('status', None)
+        
+        with connection.cursor() as cursor:
+            # Convert user_id to agent_id if needed
+            cursor.execute("""
+                SELECT da.agent_id 
+                FROM delivery_agents da 
+                WHERE da.user_id = %s OR da.agent_id = %s
+            """, [agent_id, agent_id])
+            
+            agent_record = cursor.fetchone()
+            if not agent_record:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Delivery agent not found'
+                }, status=404)
+            
+            actual_agent_id = agent_record[0]
+            
+            if status:
                 cursor.execute("""
                     SELECT 
                         o.order_id,
                         o.order_number,
                         o.order_date,
                         os.status_name AS order_status,
+                        u.user_id AS customer_id,
                         u.first_name || ' ' || u.last_name AS customer_name,
-                        u.first_name AS customer_first_name,
-                        u.last_name AS customer_last_name,
-                        u.email AS customer_email,
                         u.phone AS customer_phone,
+                        u.email AS customer_email,
                         o.delivery_address,
+                        o.delivery_notes,
+                        dm.name AS delivery_method,
+                        dm.base_cost AS delivery_cost,
+                        dm.estimated_days,
                         o.total_amount,
+                        o.tracking_number,
                         o.estimated_delivery_date,
                         o.actual_delivery_date,
                         oa.assigned_at,
                         oa.completed_at,
-                        oa.notes AS delivery_notes,
-                        dm.name AS delivery_method,
-                        dm.description AS delivery_method_description,
-                        dm.base_cost AS delivery_cost,
-                        dm.estimated_days AS delivery_time,
-                        NVL(dc.customer_confirmed, 0) AS customer_confirmed,
-                        NVL(dc.agent_confirmed, 0) AS agent_confirmed,
+                        oa.notes AS assignment_notes,
+                        dc.customer_confirmed,
+                        dc.agent_confirmed,
                         dc.confirmed_date,
-                        ROUND(o.total_amount * 0.05, 2) AS delivery_fee,
-                        (SELECT LISTAGG(p.name || ' (' || ps.size_name || ', Qty: ' || oi.quantity || ')', ', ') 
+                        -- Order items summary
+                        (SELECT LISTAGG(p.name || ' (x' || oi.quantity || ')', ', ') 
                          WITHIN GROUP (ORDER BY oi.order_item_id)
                          FROM order_items oi 
                          JOIN plants p ON oi.plant_id = p.plant_id
-                         JOIN plant_sizes ps ON oi.size_id = ps.size_id
-                         WHERE oi.order_id = o.order_id) AS order_items,
-                        (SELECT COUNT(*) 
+                         WHERE oi.order_id = o.order_id) AS items_summary,
+                        -- Primary image for display
+                        (SELECT pi.image_url 
                          FROM order_items oi 
-                         WHERE oi.order_id = o.order_id) AS total_items_count,
+                         JOIN plants p ON oi.plant_id = p.plant_id
+                         LEFT JOIN plant_images pi ON p.plant_id = pi.plant_id AND pi.is_primary = 1
+                         WHERE oi.order_id = o.order_id AND ROWNUM = 1) AS primary_image
+                    FROM orders o
+                    JOIN order_assignments oa ON o.order_id = oa.order_id
+                    JOIN order_statuses os ON o.status_id = os.status_id
+                    JOIN users u ON o.user_id = u.user_id
+                    JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
+                    LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
+                    WHERE oa.agent_id = %s
+                    AND os.status_name = %s
+                    ORDER BY 
                         CASE 
-                            WHEN os.status_name = 'Processing' THEN 'Ready for Pickup'
-                            WHEN os.status_name = 'Shipped' THEN 'In Transit'
-                            WHEN os.status_name = 'Out for Delivery' THEN 'Out for Delivery'
-                            WHEN os.status_name = 'Delivered' THEN 'Delivered'
-                            ELSE os.status_name
-                        END AS delivery_status_display
+                            WHEN os.status_name = 'Out for Delivery' THEN 1
+                            WHEN os.status_name = 'Shipped' THEN 2
+                            WHEN os.status_name = 'Processing' THEN 3
+                            ELSE 4
+                        END,
+                        o.order_date DESC
+                """, [actual_agent_id, status])
+            else:
+                cursor.execute("""
+                    SELECT 
+                        o.order_id,
+                        o.order_number,
+                        o.order_date,
+                        os.status_name AS order_status,
+                        u.user_id AS customer_id,
+                        u.first_name || ' ' || u.last_name AS customer_name,
+                        u.phone AS customer_phone,
+                        u.email AS customer_email,
+                        o.delivery_address,
+                        o.delivery_notes,
+                        dm.name AS delivery_method,
+                        dm.base_cost AS delivery_cost,
+                        dm.estimated_days,
+                        o.total_amount,
+                        o.tracking_number,
+                        o.estimated_delivery_date,
+                        o.actual_delivery_date,
+                        oa.assigned_at,
+                        oa.completed_at,
+                        oa.notes AS assignment_notes,
+                        dc.customer_confirmed,
+                        dc.agent_confirmed,
+                        dc.confirmed_date,
+                        -- Order items summary
+                        (SELECT LISTAGG(p.name || ' (x' || oi.quantity || ')', ', ') 
+                         WITHIN GROUP (ORDER BY oi.order_item_id)
+                         FROM order_items oi 
+                         JOIN plants p ON oi.plant_id = p.plant_id
+                         WHERE oi.order_id = o.order_id) AS items_summary,
+                        -- Primary image for display
+                        (SELECT pi.image_url 
+                         FROM order_items oi 
+                         JOIN plants p ON oi.plant_id = p.plant_id
+                         LEFT JOIN plant_images pi ON p.plant_id = pi.plant_id AND pi.is_primary = 1
+                         WHERE oi.order_id = o.order_id AND ROWNUM = 1) AS primary_image
                     FROM orders o
                     JOIN order_assignments oa ON o.order_id = oa.order_id
                     JOIN order_statuses os ON o.status_id = os.status_id
@@ -170,273 +319,240 @@ def delivery_agent_dashboard(request, agent_id):
                     WHERE oa.agent_id = %s
                     ORDER BY 
                         CASE 
-                            WHEN os.status_name IN ('Processing', 'Shipped') THEN 1
-                            WHEN os.status_name = 'Out for Delivery' THEN 2
-                            WHEN os.status_name = 'Delivered' THEN 3
+                            WHEN os.status_name = 'Out for Delivery' THEN 1
+                            WHEN os.status_name = 'Shipped' THEN 2
+                            WHEN os.status_name = 'Processing' THEN 3
                             ELSE 4
                         END,
                         o.order_date DESC
                 """, [actual_agent_id])
-                results['all_assignments'] = dictfetchall(cursor)
-                
-                # 2. Pending deliveries (assigned to this agent but not completed)
-                cursor.execute("""
-                    SELECT 
-                        o.order_id,
-                        o.order_number,
-                        o.order_date,
-                        os.status_name AS order_status,
-                        u.first_name || ' ' || u.last_name AS customer_name,
-                        u.first_name AS customer_first_name,
-                        u.last_name AS customer_last_name,
-                        u.email AS customer_email,
-                        u.phone AS customer_phone,
-                        o.delivery_address,
-                        o.total_amount,
-                        o.estimated_delivery_date,
-                        oa.assigned_at,
-                        oa.agent_id,
-                        oa.notes AS delivery_notes,
-                        dm.name AS delivery_method,
-                        dm.description AS delivery_method_description,
-                        dm.base_cost AS delivery_cost,
-                        dm.estimated_days AS delivery_time,
-                        NVL(dc.customer_confirmed, 0) AS customer_confirmed,
-                        NVL(dc.agent_confirmed, 0) AS agent_confirmed,
-                        dc.confirmed_date,
-                        ROUND(o.total_amount * 0.05, 2) AS delivery_fee,
-                        (SELECT LISTAGG(p.name || ' (' || ps.size_name || ', Qty: ' || oi.quantity || ')', ', ') 
-                         WITHIN GROUP (ORDER BY oi.order_item_id)
-                         FROM order_items oi 
-                         JOIN plants p ON oi.plant_id = p.plant_id
-                         JOIN plant_sizes ps ON oi.size_id = ps.size_id
-                         WHERE oi.order_id = o.order_id) AS order_items,
-                        (SELECT COUNT(*) 
-                         FROM order_items oi 
-                         WHERE oi.order_id = o.order_id) AS total_items_count,
-                        CASE 
-                            WHEN os.status_name = 'Processing' THEN 'Ready for Pickup'
-                            WHEN os.status_name = 'Shipped' THEN 'In Transit'
-                            WHEN os.status_name = 'Out for Delivery' THEN 'Out for Delivery'
-                            ELSE os.status_name
-                        END AS delivery_status_display,
-                        CASE 
-                            WHEN oa.completed_at IS NULL AND dc.agent_confirmed = 0 THEN 'Pending Pickup'
-                            WHEN oa.completed_at IS NOT NULL AND dc.agent_confirmed = 1 AND dc.customer_confirmed = 0 THEN 'Awaiting Customer Confirmation'
-                            ELSE 'In Progress'
-                        END AS action_required
-                    FROM orders o
-                    JOIN order_assignments oa ON o.order_id = oa.order_id
-                    JOIN order_statuses os ON o.status_id = os.status_id
-                    JOIN users u ON o.user_id = u.user_id
-                    JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
-                    LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
-                    WHERE oa.agent_id = %s
-                    AND os.status_name IN ('Processing', 'Shipped', 'Out for Delivery')
-                    AND (oa.completed_at IS NULL OR dc.agent_confirmed = 0 OR 
-                         (dc.agent_confirmed = 1 AND dc.customer_confirmed = 0))
-                    ORDER BY 
-                        CASE 
-                            WHEN os.status_name = 'Processing' THEN 1
-                            WHEN os.status_name = 'Shipped' THEN 2
-                            WHEN os.status_name = 'Out for Delivery' THEN 3
-                            ELSE 4
-                        END,
-                        o.order_date ASC
-                """, [actual_agent_id])
-                results['pending_assignments'] = dictfetchall(cursor)
-                
-                # 3. Completed deliveries
-                cursor.execute("""
-                    SELECT 
-                        o.order_id,
-                        o.order_number,
-                        o.order_date,
-                        os.status_name AS order_status,
-                        u.first_name || ' ' || u.last_name AS customer_name,
-                        u.first_name AS customer_first_name,
-                        u.last_name AS customer_last_name,
-                        u.email AS customer_email,
-                        u.phone AS customer_phone,
-                        o.delivery_address,
-                        o.total_amount,
-                        o.actual_delivery_date,
-                        oa.assigned_at,
-                        oa.completed_at,
-                        oa.notes AS delivery_notes,
-                        dm.name AS delivery_method,
-                        dm.description AS delivery_method_description,
-                        dm.base_cost AS delivery_cost,
-                        dm.estimated_days AS delivery_time,
-                        NVL(dc.customer_confirmed, 0) AS customer_confirmed,
-                        NVL(dc.agent_confirmed, 0) AS agent_confirmed,
-                        dc.confirmed_date,
-                        ROUND(o.total_amount * 0.05, 2) AS delivery_fee,
-                        (SELECT LISTAGG(p.name || ' (' || ps.size_name || ', Qty: ' || oi.quantity || ')', ', ') 
-                         WITHIN GROUP (ORDER BY oi.order_item_id)
-                         FROM order_items oi 
-                         JOIN plants p ON oi.plant_id = p.plant_id
-                         JOIN plant_sizes ps ON oi.size_id = ps.size_id
-                         WHERE oi.order_id = o.order_id) AS order_items,
-                        (SELECT COUNT(*) 
-                         FROM order_items oi 
-                         WHERE oi.order_id = o.order_id) AS total_items_count,
-                        CASE 
-                            WHEN dc.customer_confirmed = 1 AND dc.agent_confirmed = 1 THEN 'Fully Confirmed'
-                            WHEN dc.agent_confirmed = 1 AND dc.customer_confirmed = 0 THEN 'Awaiting Customer Confirmation'
-                            ELSE 'Completed by Agent'
-                        END AS completion_status
-                    FROM orders o
-                    JOIN order_assignments oa ON o.order_id = oa.order_id
-                    JOIN order_statuses os ON o.status_id = os.status_id
-                    JOIN users u ON o.user_id = u.user_id
-                    JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
-                    LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
-                    WHERE oa.agent_id = %s
-                    AND (os.status_name = 'Delivered' OR (oa.completed_at IS NOT NULL AND dc.agent_confirmed = 1))
-                    ORDER BY COALESCE(o.actual_delivery_date, oa.completed_at) DESC
-                """, [actual_agent_id])
-                results['completed_assignments'] = dictfetchall(cursor)
-                
-                # 4. Delivery statistics
-                cursor.execute("""
-                    SELECT 
-                        COUNT(*) AS total_deliveries,
-                        SUM(CASE WHEN os.status_name = 'Delivered' THEN 1 ELSE 0 END) AS completed_deliveries,
-                        SUM(CASE WHEN os.status_name IN ('Processing', 'Shipped', 'Out for Delivery') THEN 1 ELSE 0 END) AS pending_deliveries,
-                        SUM(CASE WHEN os.status_name = 'Delivered' THEN o.total_amount * 0.05 ELSE 0 END) AS total_earnings,
-                        AVG(CASE WHEN os.status_name = 'Delivered' THEN o.total_amount * 0.05 ELSE NULL END) AS avg_earnings_per_delivery,
-                        ROUND((SUM(CASE WHEN os.status_name = 'Delivered' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)) * 100, 2) AS completion_rate
-                    FROM orders o
-                    JOIN order_assignments oa ON o.order_id = oa.order_id
-                    JOIN order_statuses os ON o.status_id = os.status_id
-                    WHERE oa.agent_id = %s
-                """, [actual_agent_id])
-                stats = dictfetchall(cursor)
-                
-                # Manual calculation to double-check
-                cursor.execute("""
-                    SELECT COUNT(*) FROM order_assignments WHERE agent_id = %s
-                """, [actual_agent_id])
-                manual_total = cursor.fetchone()[0]
-                
-                if stats and len(stats) > 0:
-                    stats_data = stats[0]
-                    # Ensure pending deliveries matches our manual count
-                    stats_data['pending_deliveries'] = len(results.get('pending_assignments', []))
-                    stats_data['total_deliveries'] = manual_total
-                    results['stats'] = stats_data
-                else:
-                    results['stats'] = {
-                        'total_deliveries': manual_total,
-                        'completed_deliveries': 0,
-                        'pending_deliveries': len(results.get('pending_assignments', [])),
-                        'total_earnings': 0,
-                        'avg_earnings_per_delivery': 0,
-                        'completion_rate': 0
-                    }
-                
-                # Debug: Print agent info and stats
-                print(f"DEBUG - Agent ID: {actual_agent_id}")
-                print(f"DEBUG - Agent Info Query Result: {agent_info}")
-                print(f"DEBUG - Stats Query Result: {stats}")
-                print(f"DEBUG - All Assignments Count: {len(results['all_assignments'])}")
-                print(f"DEBUG - Pending Assignments Count: {len(results['pending_assignments'])}")
-                print(f"DEBUG - Completed Assignments Count: {len(results['completed_assignments'])}")
-                
-                # 5. Delivery history (last 30 days)
-                cursor.execute("""
-                    SELECT 
-                        o.order_id,
-                        o.order_number,
-                        o.order_date,
-                        os.status_name AS order_status,
-                        u.first_name || ' ' || u.last_name AS customer_name,
-                        u.email AS customer_email,
-                        u.phone AS customer_phone,
-                        o.delivery_address,
-                        o.total_amount,
-                        o.actual_delivery_date,
-                        oa.completed_at,
-                        oa.notes AS delivery_notes,
-                        dm.name AS delivery_method,
-                        dm.estimated_days AS delivery_time,
-                        NVL(dc.customer_confirmed, 0) AS customer_confirmed,
-                        NVL(dc.agent_confirmed, 0) AS agent_confirmed,
-                        dc.confirmed_date,
-                        ROUND(o.total_amount * 0.05, 2) AS delivery_fee,
-                        (SELECT COUNT(*) FROM order_items WHERE order_id = o.order_id) AS item_count
-                    FROM orders o
-                    JOIN order_assignments oa ON o.order_id = oa.order_id
-                    JOIN order_statuses os ON o.status_id = os.status_id
-                    JOIN users u ON o.user_id = u.user_id
-                    JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
-                    LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
-                    WHERE oa.agent_id = %s
-                    AND o.order_date >= SYSDATE - 30
-                    ORDER BY o.order_date DESC
-                """, [actual_agent_id])
-                results['history'] = dictfetchall(cursor)
-
-                return JsonResponse({
-                    'success': True,
-                    'data': results
-                })
-
-        except Exception as e:
-            import traceback
-            error_details = {
-                'error_type': type(e).__name__,
-                'error_message': str(e),
-                'traceback': traceback.format_exc()
-            }
-            print(f"Dashboard Error: {error_details}")
+            
+            orders = dictfetchall(cursor)
+            
             return JsonResponse({
-                'success': False,
-                'error': str(e),
-                'error_details': error_details
-            }, status=500)
+                'success': True,
+                'data': orders or []
+            })
+            
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Orders error: {str(e)}'
+        }, status=500)
 
 @csrf_exempt
-def mark_delivery_completed(request):
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            order_id = data.get('order_id')
-            agent_id = data.get('agent_id')  # This might be user_id
-            notes = data.get('notes', '')
+@require_http_methods(["GET"])
+def delivery_agent_pending_orders(request, agent_id):
+    """Get pending orders for a delivery agent"""
+    try:
+        with connection.cursor() as cursor:
+            # Convert user_id to agent_id if needed
+            cursor.execute("""
+                SELECT da.agent_id 
+                FROM delivery_agents da 
+                WHERE da.user_id = %s OR da.agent_id = %s
+            """, [agent_id, agent_id])
+            
+            agent_record = cursor.fetchone()
+            if not agent_record:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Delivery agent not found'
+                }, status=404)
+            
+            actual_agent_id = agent_record[0]
+            
+            result_cursor = cursor.connection.cursor()
+            cursor.callproc('get_delivery_agent_pending_orders', [actual_agent_id, result_cursor])
+            orders = dictfetchall(result_cursor)
+            result_cursor.close()
+            
+            return JsonResponse({
+                'success': True,
+                'data': orders or []
+            })
+            
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Pending orders error: {str(e)}'
+        }, status=500)
 
-            with connection.cursor() as cursor:
-                # Convert user_id to agent_id if needed
-                cursor.execute("""
-                    SELECT da.agent_id 
-                    FROM delivery_agents da 
-                    WHERE da.user_id = %s OR da.agent_id = %s
-                """, [agent_id, agent_id])
-                
-                agent_record = cursor.fetchone()
-                if not agent_record:
-                    return JsonResponse({
-                        'success': False,
-                        'message': 'Delivery agent not found'
-                    }, status=404)
-                
-                actual_agent_id = agent_record[0]
-                # 1. Check if assignment exists and belongs to this agent
-                cursor.execute("""
-                    SELECT COUNT(*) 
-                    FROM order_assignments 
-                    WHERE order_id = %s AND agent_id = %s
-                """, [order_id, actual_agent_id])
-                
-                assignment_exists = cursor.fetchone()[0]
-                if assignment_exists == 0:
-                    return JsonResponse({
-                        'success': False,
-                        'message': 'Order not assigned to this delivery agent'
-                    }, status=400)
+@csrf_exempt
+@require_http_methods(["GET"])
+def delivery_agent_completed_orders(request, agent_id):
+    """Get completed orders for a delivery agent"""
+    try:
+        with connection.cursor() as cursor:
+            # Convert user_id to agent_id if needed
+            cursor.execute("""
+                SELECT da.agent_id 
+                FROM delivery_agents da 
+                WHERE da.user_id = %s OR da.agent_id = %s
+            """, [agent_id, agent_id])
+            
+            agent_record = cursor.fetchone()
+            if not agent_record:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Delivery agent not found'
+                }, status=404)
+            
+            actual_agent_id = agent_record[0]
+            
+            result_cursor = cursor.connection.cursor()
+            cursor.callproc('get_delivery_agent_completed_orders', [actual_agent_id, result_cursor])
+            orders = dictfetchall(result_cursor)
+            result_cursor.close()
+            
+            return JsonResponse({
+                'success': True,
+                'data': orders or []
+            })
+            
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Completed orders error: {str(e)}'
+        }, status=500)
 
-                # 2. Update assignment completion time
+@csrf_exempt
+@require_http_methods(["GET"])
+def delivery_agent_stats(request, agent_id):
+    """Get delivery agent statistics"""
+    try:
+        with connection.cursor() as cursor:
+            # Convert user_id to agent_id if needed
+            cursor.execute("""
+                SELECT da.agent_id 
+                FROM delivery_agents da 
+                WHERE da.user_id = %s OR da.agent_id = %s
+            """, [agent_id, agent_id])
+            
+            agent_record = cursor.fetchone()
+            if not agent_record:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Delivery agent not found'
+                }, status=404)
+            
+            actual_agent_id = agent_record[0]
+            
+            total_assignments = cursor.var(int)
+            pending_assignments = cursor.var(int)
+            completed_assignments = cursor.var(int)
+            total_earnings = cursor.var(float)
+            avg_delivery_time = cursor.var(float)
+            
+            cursor.callproc('get_delivery_agent_stats', [
+                actual_agent_id,
+                total_assignments,
+                pending_assignments,
+                completed_assignments,
+                total_earnings,
+                avg_delivery_time
+            ])
+            
+            return JsonResponse({
+                'success': True,
+                'data': {
+                    'total_assignments': total_assignments.getvalue() or 0,
+                    'pending_assignments': pending_assignments.getvalue() or 0,
+                    'completed_assignments': completed_assignments.getvalue() or 0,
+                    'total_earnings': float(total_earnings.getvalue() or 0),
+                    'avg_delivery_time': float(avg_delivery_time.getvalue() or 0)
+                }
+            })
+            
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Stats error: {str(e)}'
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def update_delivery_status(request):
+    """Update delivery status for an order using direct SQL"""
+    try:
+        data = json.loads(request.body)
+        order_id = data.get('order_id')
+        agent_id = data.get('agent_id')
+        status = data.get('status')
+        notes = data.get('notes', None)
+        
+        with connection.cursor() as cursor:
+            # Convert user_id to agent_id if needed
+            cursor.execute("""
+                SELECT da.agent_id 
+                FROM delivery_agents da 
+                WHERE da.user_id = %s OR da.agent_id = %s
+            """, [agent_id, agent_id])
+            
+            agent_record = cursor.fetchone()
+            if not agent_record:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Delivery agent not found'
+                }, status=404)
+            
+            actual_agent_id = agent_record[0]
+            
+            # Check if agent is assigned to this order
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM order_assignments
+                WHERE order_id = %s AND agent_id = %s
+            """, [order_id, actual_agent_id])
+            
+            valid_agent = cursor.fetchone()[0]
+            
+            if valid_agent == 0:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Order not assigned to this delivery agent'
+                }, status=400)
+            
+            # Get current status
+            cursor.execute("""
+                SELECT os.status_name
+                FROM orders o
+                JOIN order_statuses os ON o.status_id = os.status_id
+                WHERE o.order_id = %s
+            """, [order_id])
+            
+            current_status_result = cursor.fetchone()
+            if not current_status_result:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Order not found'
+                }, status=404)
+            
+            current_status = current_status_result[0]
+            
+            # Update status based on the requested action
+            if status == 'PICKED_UP' and current_status == 'Processing':
+                cursor.execute("""
+                    UPDATE orders
+                    SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Shipped')
+                    WHERE order_id = %s
+                """, [order_id])
+                
+                message = 'Order picked up successfully'
+                success = True
+                
+            elif status == 'OUT_FOR_DELIVERY' and current_status == 'Shipped':
+                cursor.execute("""
+                    UPDATE orders
+                    SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Out for Delivery')
+                    WHERE order_id = %s
+                """, [order_id])
+                
+                message = 'Order out for delivery'
+                success = True
+                
+            elif status == 'DELIVERED' and current_status == 'Out for Delivery':
+                # Mark assignment as completed
                 cursor.execute("""
                     UPDATE order_assignments
                     SET completed_at = SYSTIMESTAMP,
@@ -444,15 +560,15 @@ def mark_delivery_completed(request):
                     WHERE order_id = %s
                 """, [notes, order_id])
 
-                # 3. Update order status to "Out for Delivery"
+                # Update order status to delivered
                 cursor.execute("""
                     UPDATE orders
-                    SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Out for Delivery')
+                    SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
+                        actual_delivery_date = SYSTIMESTAMP
                     WHERE order_id = %s
-                    AND status_id != (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')
                 """, [order_id])
 
-                # 4. Create or update delivery confirmation record
+                # Create or update delivery confirmation record
                 cursor.execute("""
                     MERGE INTO delivery_confirmations dc
                     USING (SELECT %s AS order_id, 
@@ -467,319 +583,227 @@ def mark_delivery_completed(request):
                         INSERT (order_id, user_id, agent_id, agent_confirmed)
                         VALUES (src.order_id, src.user_id, src.agent_id, 1)
                 """, [order_id, order_id, actual_agent_id])
-
-                # 5. If customer already confirmed, mark as delivered
-                cursor.execute("""
-                    UPDATE orders
-                    SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
-                        actual_delivery_date = SYSTIMESTAMP
-                    WHERE order_id = %s
-                    AND EXISTS (
-                        SELECT 1 FROM delivery_confirmations 
-                        WHERE order_id = %s AND customer_confirmed = 1
-                    )
-                """, [order_id, order_id])
-
+                
+                message = 'Order delivered successfully'
+                success = True
+                
+            else:
+                message = f'Invalid status transition from {current_status} to {status}'
+                success = False
+            
+            if success:
                 connection.commit()
-
                 return JsonResponse({
                     'success': True,
-                    'message': 'Delivery marked as delivered successfully. Waiting for customer confirmation.'
+                    'message': message
                 })
-
-        except Exception as e:
-            connection.rollback()
-            return JsonResponse({
-                'success': False,
-                'error': str(e)
-            }, status=500)
+            else:
+                return JsonResponse({
+                    'success': False,
+                    'message': message
+                })
+            
+    except Exception as e:
+        connection.rollback()
+        return JsonResponse({
+            'success': False,
+            'error': f'Status update error: {str(e)}'
+        }, status=500)
 
 @csrf_exempt
+@require_http_methods(["POST"])
+def mark_delivery_completed(request):
+    """Mark delivery as completed"""
+    try:
+        data = json.loads(request.body)
+        order_id = data.get('order_id')
+        agent_id = data.get('agent_id')
+        notes = data.get('notes', '')
+        
+        with connection.cursor() as cursor:
+            # Convert user_id to agent_id if needed
+            cursor.execute("""
+                SELECT da.agent_id 
+                FROM delivery_agents da 
+                WHERE da.user_id = %s OR da.agent_id = %s
+            """, [agent_id, agent_id])
+            
+            agent_record = cursor.fetchone()
+            if not agent_record:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Delivery agent not found'
+                }, status=404)
+            
+            actual_agent_id = agent_record[0]
+            
+            success_var = cursor.var(int)
+            message_var = cursor.var(str)
+            
+            cursor.callproc('mark_delivery_delivered', [
+                int(order_id),
+                actual_agent_id,
+                notes,
+                success_var,
+                message_var
+            ])
+            
+            success = success_var.getvalue()
+            message = message_var.getvalue()
+            
+            return JsonResponse({
+                'success': bool(success),
+                'message': message
+            })
+            
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Mark delivery error: {str(e)}'
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
 def get_assignment_count(request, agent_id):
-    if request.method == 'GET':
-        try:
-            status = request.GET.get('status', None)
+    """Get assignment count for delivery agent"""
+    try:
+        status = request.GET.get('status', None)
+        
+        with connection.cursor() as cursor:
+            # Convert user_id to agent_id if needed
+            cursor.execute("""
+                SELECT da.agent_id 
+                FROM delivery_agents da 
+                WHERE da.user_id = %s OR da.agent_id = %s
+            """, [agent_id, agent_id])
             
-            with connection.cursor() as cursor:
-                # Convert user_id to agent_id if needed
-                cursor.execute("""
-                    SELECT da.agent_id 
-                    FROM delivery_agents da 
-                    WHERE da.user_id = %s OR da.agent_id = %s
-                """, [agent_id, agent_id])
-                
-                agent_record = cursor.fetchone()
-                if not agent_record:
-                    return JsonResponse({
-                        'success': False,
-                        'error': 'Delivery agent not found'
-                    }, status=404)
-                
-                actual_agent_id = agent_record[0]
-                if status:
-                    cursor.execute("""
-                        SELECT COUNT(*)
-                        FROM order_assignments oa
-                        JOIN orders o ON oa.order_id = o.order_id
-                        JOIN order_statuses os ON o.status_id = os.status_id
-                        WHERE oa.agent_id = %s
-                        AND os.status_name = %s
-                        AND oa.completed_at IS NULL
-                    """, [actual_agent_id, status])
-                else:
-                    cursor.execute("""
-                        SELECT COUNT(*)
-                        FROM order_assignments oa
-                        JOIN orders o ON oa.order_id = o.order_id
-                        WHERE oa.agent_id = %s
-                        AND oa.completed_at IS NULL
-                    """, [actual_agent_id])
-                
-                count = cursor.fetchone()[0]
-
-                return JsonResponse({
-                    'success': True,
-                    'agent_id': actual_agent_id,
-                    'status_filter': status,
-                    'assignment_count': count
-                })
-
-        except Exception as e:
-            return JsonResponse({
-                'success': False,
-                'error': str(e)
-            }, status=500)
-
-@csrf_exempt
-def confirm_agent_delivery(request):
-    """Enhanced delivery confirmation with detailed status management"""
-    if request.method == 'POST':
-        try:
-            # Debug: Log the raw request body
-            print(f"DEBUG - Request body: {request.body}")
-            print(f"DEBUG - Request content type: {request.content_type}")
-            
-            data = json.loads(request.body)
-            print(f"DEBUG - Parsed data: {data}")
-            
-            order_id = data.get('order_id')
-            agent_id = data.get('agent_id')  # This might be user_id
-            notes = data.get('notes', '')
-            confirmation_type = data.get('type', 'delivered')  # 'delivered' or 'picked_up'
-            
-            # Validate required parameters
-            if not order_id:
+            agent_record = cursor.fetchone()
+            if not agent_record:
                 return JsonResponse({
                     'success': False,
-                    'message': 'order_id is required'
-                }, status=400)
+                    'error': 'Delivery agent not found'
+                }, status=404)
             
-            if not agent_id:
-                return JsonResponse({
-                    'success': False,
-                    'message': 'agent_id is required'
-                }, status=400)
-
-            with connection.cursor() as cursor:
-                # Convert user_id to agent_id if needed
+            actual_agent_id = agent_record[0]
+            
+            if status:
                 cursor.execute("""
-                    SELECT da.agent_id 
-                    FROM delivery_agents da 
-                    WHERE da.user_id = %s OR da.agent_id = %s
-                """, [agent_id, agent_id])
-                
-                agent_record = cursor.fetchone()
-                if not agent_record:
-                    return JsonResponse({
-                        'success': False,
-                        'message': 'Delivery agent not found'
-                    }, status=404)
-                
-                actual_agent_id = agent_record[0]
-                
-                # 1. Verify assignment exists and belongs to this agent
+                    SELECT get_delivery_agent_assignment_count(%s, %s) FROM dual
+                """, [actual_agent_id, status])
+            else:
                 cursor.execute("""
-                    SELECT oa.assignment_id, o.status_id, os.status_name
-                    FROM order_assignments oa 
-                    JOIN orders o ON oa.order_id = o.order_id
-                    JOIN order_statuses os ON o.status_id = os.status_id
-                    WHERE oa.order_id = %s AND oa.agent_id = %s
-                """, [order_id, actual_agent_id])
-                
-                assignment = cursor.fetchone()
-                if not assignment:
-                    return JsonResponse({
-                        'success': False,
-                        'message': 'Order not assigned to this delivery agent'
-                    }, status=400)
-                
-                assignment_id, current_status_id, current_status = assignment
-                
-                # 2. Handle different confirmation types
-                if confirmation_type == 'picked_up':
-                    # Mark as picked up - change status to "Shipped"
-                    cursor.execute("""
-                        UPDATE orders
-                        SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Shipped')
-                        WHERE order_id = %s
-                    """, [order_id])
-                    
-                    cursor.execute("""
-                        UPDATE order_assignments
-                        SET notes = COALESCE(%s, notes)
-                        WHERE order_id = %s
-                    """, [notes, order_id])
-                    
-                    message = 'Order marked as picked up and in transit.'
-                    
-                elif confirmation_type == 'delivered':
-                    # Mark as delivered - change status to "Out for Delivery" and set agent confirmation
-                    cursor.execute("""
-                        UPDATE order_assignments
-                        SET completed_at = SYSTIMESTAMP,
-                            notes = COALESCE(%s, notes)
-                        WHERE order_id = %s
-                    """, [notes, order_id])
+                    SELECT get_delivery_agent_assignment_count(%s, NULL) FROM dual
+                """, [actual_agent_id])
+            
+            count = cursor.fetchone()[0]
 
-                    cursor.execute("""
-                        UPDATE orders
-                        SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Out for Delivery')
-                        WHERE order_id = %s
-                        AND status_id != (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')
-                    """, [order_id])
-
-                    # Create or update delivery confirmation record
-                    cursor.execute("""
-                        MERGE INTO delivery_confirmations dc
-                        USING (SELECT %s AS order_id, 
-                                      (SELECT user_id FROM orders WHERE order_id = %s) AS user_id,
-                                      %s AS agent_id FROM dual) src
-                        ON (dc.order_id = src.order_id)
-                        WHEN MATCHED THEN
-                            UPDATE SET 
-                                agent_confirmed = 1,
-                                confirmed_date = CASE WHEN customer_confirmed = 1 THEN SYSTIMESTAMP ELSE confirmed_date END
-                        WHEN NOT MATCHED THEN
-                            INSERT (order_id, user_id, agent_id, agent_confirmed)
-                            VALUES (src.order_id, src.user_id, src.agent_id, 1)
-                    """, [order_id, order_id, actual_agent_id])
-
-                    # If customer already confirmed, mark as fully delivered
-                    cursor.execute("""
-                        UPDATE orders
-                        SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
-                            actual_delivery_date = SYSTIMESTAMP
-                        WHERE order_id = %s
-                        AND EXISTS (
-                            SELECT 1 FROM delivery_confirmations 
-                            WHERE order_id = %s AND customer_confirmed = 1 AND agent_confirmed = 1
-                        )
-                    """, [order_id, order_id])
-
-                    message = 'Delivery marked as completed by agent. Waiting for customer confirmation.'
-                
-                else:
-                    return JsonResponse({
-                        'success': False,
-                        'message': 'Invalid confirmation type. Use "picked_up" or "delivered".'
-                    }, status=400)
-
-                connection.commit()
-
-                return JsonResponse({
-                    'success': True,
-                    'message': message,
-                    'confirmation_type': confirmation_type,
-                    'order_id': order_id
-                })
-
-        except json.JSONDecodeError as e:
-            print(f"JSON decode error: {e}")
             return JsonResponse({
-                'success': False,
-                'message': f'Invalid JSON in request body: {str(e)}'
-            }, status=400)
-        except Exception as e:
-            connection.rollback()
-            import traceback
-            print(f"Error in confirm_agent_delivery: {traceback.format_exc()}")
-            return JsonResponse({
-                'success': False,
-                'error': str(e)
-            }, status=500)
-    
-    return JsonResponse({
-        'success': False,
-        'message': 'Only POST method allowed'
-    }, status=405)
+                'success': True,
+                'assignment_count': count or 0,
+                'status_filter': status
+            })
+            
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Assignment count error: {str(e)}'
+        }, status=500)
 
 @csrf_exempt
+@require_http_methods(["GET"])
 def get_agent_earnings(request, agent_id):
-    if request.method == 'GET':
-        try:
-            year = request.GET.get('year', None)
+    """Get monthly earnings for delivery agent"""
+    try:
+        year = request.GET.get('year', None)
+        
+        with connection.cursor() as cursor:
+            # Convert user_id to agent_id if needed
+            cursor.execute("""
+                SELECT da.agent_id 
+                FROM delivery_agents da 
+                WHERE da.user_id = %s OR da.agent_id = %s
+            """, [agent_id, agent_id])
             
-            with connection.cursor() as cursor:
-                # Convert user_id to agent_id if needed
-                cursor.execute("""
-                    SELECT da.agent_id 
-                    FROM delivery_agents da 
-                    WHERE da.user_id = %s OR da.agent_id = %s
-                """, [agent_id, agent_id])
-                
-                agent_record = cursor.fetchone()
-                if not agent_record:
-                    return JsonResponse({
-                        'success': False,
-                        'error': 'Delivery agent not found'
-                    }, status=404)
-                
-                actual_agent_id = agent_record[0]
-                if year:
-                    cursor.execute("""
-                        SELECT 
-                            EXTRACT(MONTH FROM o.actual_delivery_date) AS month,
-                            TO_CHAR(o.actual_delivery_date, 'Month') AS month_name,
-                            COUNT(*) AS deliveries_completed,
-                            SUM(o.total_amount * 0.05) AS monthly_earnings,
-                            AVG(o.total_amount * 0.05) AS avg_earnings_per_delivery
-                        FROM orders o
-                        JOIN order_assignments oa ON o.order_id = oa.order_id
-                        JOIN order_statuses os ON o.status_id = os.status_id
-                        WHERE oa.agent_id = %s
-                        AND os.status_name = 'Delivered'
-                        AND EXTRACT(YEAR FROM o.actual_delivery_date) = %s
-                        GROUP BY EXTRACT(MONTH FROM o.actual_delivery_date), TO_CHAR(o.actual_delivery_date, 'Month')
-                        ORDER BY EXTRACT(MONTH FROM o.actual_delivery_date)
-                    """, [actual_agent_id, int(year)])
-                else:
-                    cursor.execute("""
-                        SELECT 
-                            EXTRACT(MONTH FROM o.actual_delivery_date) AS month,
-                            TO_CHAR(o.actual_delivery_date, 'Month') AS month_name,
-                            COUNT(*) AS deliveries_completed,
-                            SUM(o.total_amount * 0.05) AS monthly_earnings,
-                            AVG(o.total_amount * 0.05) AS avg_earnings_per_delivery
-                        FROM orders o
-                        JOIN order_assignments oa ON o.order_id = oa.order_id
-                        JOIN order_statuses os ON o.status_id = os.status_id
-                        WHERE oa.agent_id = %s
-                        AND os.status_name = 'Delivered'
-                        GROUP BY EXTRACT(MONTH FROM o.actual_delivery_date), TO_CHAR(o.actual_delivery_date, 'Month')
-                        ORDER BY EXTRACT(MONTH FROM o.actual_delivery_date)
-                    """, [actual_agent_id])
-                
-                earnings_data = dictfetchall(cursor)
-
+            agent_record = cursor.fetchone()
+            if not agent_record:
                 return JsonResponse({
-                    'success': True,
-                    'agent_id': actual_agent_id,
-                    'year': year,
-                    'monthly_earnings': earnings_data
-                })
+                    'success': False,
+                    'error': 'Delivery agent not found'
+                }, status=404)
+            
+            actual_agent_id = agent_record[0]
+            
+            result_cursor = cursor.connection.cursor()
+            
+            if year:
+                cursor.callproc('get_delivery_agent_monthly_earnings', [actual_agent_id, int(year), result_cursor])
+            else:
+                cursor.callproc('get_delivery_agent_monthly_earnings', [actual_agent_id, None, result_cursor])
+            
+            earnings_data = dictfetchall(result_cursor)
+            result_cursor.close()
 
-        except Exception as e:
             return JsonResponse({
-                'success': False,
-                'error': str(e)
-            }, status=500)
+                'success': True,
+                'monthly_earnings': earnings_data or []
+            })
+            
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Earnings error: {str(e)}'
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def confirm_agent_delivery(request):
+    """Confirm delivery by agent"""
+    try:
+        data = json.loads(request.body)
+        order_id = data.get('order_id')
+        agent_id = data.get('agent_id')
+        notes = data.get('notes', '')
+        
+        with connection.cursor() as cursor:
+            # Convert user_id to agent_id if needed
+            cursor.execute("""
+                SELECT da.agent_id 
+                FROM delivery_agents da 
+                WHERE da.user_id = %s OR da.agent_id = %s
+            """, [agent_id, agent_id])
+            
+            agent_record = cursor.fetchone()
+            if not agent_record:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Delivery agent not found'
+                }, status=404)
+            
+            actual_agent_id = agent_record[0]
+            
+            # Use the update_delivery_status procedure with 'DELIVERED' status
+            success_var = cursor.var(int)
+            message_var = cursor.var(str)
+            
+            cursor.callproc('update_delivery_status', [
+                int(order_id),
+                actual_agent_id,
+                'DELIVERED',
+                notes,
+                success_var,
+                message_var
+            ])
+            
+            success = success_var.getvalue()
+            message = message_var.getvalue()
+            
+            return JsonResponse({
+                'success': bool(success),
+                'message': message
+            })
+            
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Delivery confirmation error: {str(e)}'
+        }, status=500)

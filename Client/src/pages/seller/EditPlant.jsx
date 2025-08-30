@@ -1,19 +1,15 @@
-// src/pages/seller/AddPlant.jsx
-import { useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
-import { theme } from '../../theme.js';
-import { useSellerDashboard } from '../../hooks/useSellerDashboard';
+// src/pages/seller/EditPlant.jsx
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSellerDashboard } from '../../hooks/useSellerDashboard';
+import { theme } from '../../theme.js';
 
-const AddPlant = () => {
-  const { refreshAllData } = useOutletContext();
+const EditPlant = () => {
+  const { plantId } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
-  const { addPlant, uploadImages, dashboardData, loading, error } = useSellerDashboard(user?.user_id);
-  
-  // Debug logging
-  console.log('AddPlant - dashboardData:', dashboardData);
-  console.log('AddPlant - loading:', loading);
-  console.log('AddPlant - error:', error);
+  const { getPlantDetails, updatePlant, dashboardData, loading, uploadImages } = useSellerDashboard(user?.user_id);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -23,11 +19,44 @@ const AddPlant = () => {
     category_ids: '',
     features: '',
     care_tips: '',
-    sizes: 'Small:-5.00,Medium:0.00,Large:10.00',
+    sizes: '',
     images: []
   });
 
+  const [plantDetails, setPlantDetails] = useState(null);
+  const [loadingPlant, setLoadingPlant] = useState(true);
   const [uploadedImages, setUploadedImages] = useState([]);
+  const [message, setMessage] = useState({ type: '', text: '' });
+
+  useEffect(() => {
+    const fetchPlantDetails = async () => {
+      setLoadingPlant(true);
+      const result = await getPlantDetails(plantId);
+      
+      if (result.success && result.data) {
+        const data = result.data;
+        setPlantDetails(data);
+        setFormData({
+          name: data.name || '',
+          description: data.description || '',
+          base_price: data.base_price || '',
+          stock_quantity: data.stock_quantity || '',
+          category_ids: data.category_ids || '',
+          features: data.features || '',
+          care_tips: data.care_tips || '',
+          sizes: data.sizes || '',
+          images: []
+        });
+      } else {
+        setMessage({ type: 'error', text: result.error || 'Failed to load plant details' });
+      }
+      setLoadingPlant(false);
+    };
+
+    if (plantId) {
+      fetchPlantDetails();
+    }
+  }, [plantId, getPlantDetails]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -44,62 +73,89 @@ const AddPlant = () => {
     const result = await uploadImages(formData.images);
     if (result.success) {
       setUploadedImages(result.images);
-      alert('Images uploaded successfully!');
+      setMessage({ type: 'success', text: 'Images uploaded successfully!' });
     } else {
-      alert(`Failed to upload images: ${result.error}`);
+      setMessage({ type: 'error', text: `Failed to upload images: ${result.error}` });
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setMessage({ type: '', text: '' });
     
-    console.log('AddPlant - Form submission started');
-    console.log('AddPlant - Form data:', formData);
-    console.log('AddPlant - Uploaded images:', uploadedImages);
-    
-    if (!dashboardData.categories || dashboardData.categories.length === 0) {
-      alert('No categories available. Please try refreshing the page or contact support.');
-      return;
-    }
-    
-    const plantData = {
-      ...formData,
-      seller_id: user.user_id,
+    const updateData = {
+      requestor_id: user.user_id,
+      name: formData.name,
+      description: formData.description,
       base_price: parseFloat(formData.base_price),
       stock_quantity: parseInt(formData.stock_quantity),
-      images: uploadedImages.map(img => img.url).join(','),
-      sizes: formData.sizes || 'Small:-5.00,Medium:0.00,Large:10.00' // Default sizes if empty
+      category_ids: formData.category_ids,
+      features: formData.features,
+      care_tips: formData.care_tips,
+      sizes: formData.sizes
     };
-    
-    console.log('AddPlant - Plant data to send:', plantData);
 
-    const result = await addPlant(plantData);
-    
-    console.log('AddPlant - Result:', result);
+    // Add new images if uploaded
+    if (uploadedImages.length > 0) {
+      updateData.images = uploadedImages.map(img => img.url).join(',');
+    }
+
+    const result = await updatePlant(plantId, updateData);
     
     if (result.success) {
-      alert('Plant added successfully!');
-      setFormData({
-        name: '',
-        description: '',
-        base_price: '',
-        stock_quantity: '',
-        category_ids: '',
-        features: '',
-        care_tips: '',
-        sizes: 'Small:-5.00,Medium:0.00,Large:10.00',
-        images: []
-      });
-      setUploadedImages([]);
-      refreshAllData();
+      setMessage({ type: 'success', text: 'Plant updated successfully!' });
+      setTimeout(() => {
+        navigate('/seller/plants');
+      }, 2000);
     } else {
-      alert(`Failed to add plant: ${result.error}`);
+      setMessage({ type: 'error', text: result.error || 'Failed to update plant' });
     }
   };
 
+  if (loadingPlant) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-lg">Loading plant details...</div>
+      </div>
+    );
+  }
+
+  if (!plantDetails) {
+    return (
+      <div className="text-center py-8">
+        <h2 className="text-xl font-bold text-red-600">Plant not found</h2>
+        <button
+          onClick={() => navigate('/seller/plants')}
+          className="mt-4 bg-[#224229] text-white px-4 py-2 rounded-lg"
+        >
+          Back to Plants
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6" style={{ color: theme.colors.primary }}>Add New Plant</h1>
+      <div className="flex items-center mb-6">
+        <button
+          onClick={() => navigate('/seller/plants')}
+          className="mr-4 text-gray-600 hover:text-gray-800"
+        >
+          ← Back
+        </button>
+        <h1 className="text-2xl font-bold" style={{ color: theme.colors.primary }}>
+          Edit Plant: {plantDetails.name}
+        </h1>
+      </div>
+      
+      {message.text && (
+        <div className={`mb-4 p-4 rounded-lg ${
+          message.type === 'success' ? 'bg-green-100 text-green-700 border border-green-300' : 
+          'bg-red-100 text-red-700 border border-red-300'
+        }`}>
+          {message.text}
+        </div>
+      )}
       
       <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -136,7 +192,7 @@ const AddPlant = () => {
             
             <div className="mb-4">
               <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>
-                Initial Stock *
+                Stock Quantity *
               </label>
               <input
                 type="number"
@@ -151,52 +207,46 @@ const AddPlant = () => {
 
             <div className="mb-4">
               <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.primary }}>
-                Category *
+                Categories
               </label>
               {loading.categories ? (
                 <div className="text-sm text-gray-500">Loading categories...</div>
               ) : dashboardData.categories && dashboardData.categories.length > 0 ? (
-                <select
-                  value={formData.category_ids}
-                  onChange={(e) => {
-                    setFormData(prev => ({ ...prev, category_ids: e.target.value }));
-                  }}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                  required
-                >
-                  <option value="">Select a category</option>
-                  {dashboardData.categories.map((category, index) => {
-                    // Handle Oracle uppercase column names
-                    const categoryId = category.CATEGORY_ID || category.category_id || category.id || category.ID;
-                    const categoryName = category.NAME || category.name || category.title || 'Unknown Category';
-                    
-                    if (!categoryId) {
-                      console.warn('Category missing ID:', category);
-                      return null;
-                    }
-                    
-                    return (
-                      <option key={categoryId || index} value={categoryId}>
-                        {categoryName}
-                      </option>
-                    );
-                  }).filter(Boolean)}
-                </select>
-              ) : (
-                <div className="text-sm text-red-500">
-                  {error.categories ? `Error loading categories: ${error.categories}` : 'No categories available'}
+                <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
+                  {dashboardData.categories.map(category => (
+                    <label key={category.category_id} className="flex items-center space-x-2 text-sm">
+                      <input
+                        type="checkbox"
+                        value={category.category_id}
+                        checked={formData.category_ids.split(',').includes(category.category_id.toString())}
+                        onChange={(e) => {
+                          const categoryId = e.target.value;
+                          const currentCategories = formData.category_ids ? formData.category_ids.split(',').filter(id => id.trim()) : [];
+                          
+                          if (e.target.checked) {
+                            const newCategories = [...currentCategories, categoryId];
+                            setFormData(prev => ({ ...prev, category_ids: newCategories.join(',') }));
+                          } else {
+                            const newCategories = currentCategories.filter(id => id !== categoryId);
+                            setFormData(prev => ({ ...prev, category_ids: newCategories.join(',') }));
+                          }
+                        }}
+                        className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                      />
+                      <span>{category.name}</span>
+                    </label>
+                  ))}
                 </div>
+              ) : (
+                <div className="text-sm text-gray-500">No categories available</div>
               )}
-              <p className="text-xs text-gray-500 mt-1">
-                Select a category for your plant
-              </p>
             </div>
           </div>
           
           <div>
             <div className="mb-4">
               <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>
-                Plant Images *
+                Add New Images
               </label>
               <input
                 type="file"
@@ -204,7 +254,6 @@ const AddPlant = () => {
                 onChange={handleImageChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 accept="image/*"
-                required
               />
               <button
                 type="button"
@@ -212,11 +261,11 @@ const AddPlant = () => {
                 className="mt-2 bg-blue-500 text-white px-4 py-1 rounded text-sm"
                 disabled={formData.images.length === 0}
               >
-                Upload Images
+                Upload New Images
               </button>
               {uploadedImages.length > 0 && (
                 <div className="mt-2">
-                  <p className="text-sm text-green-600">Uploaded images:</p>
+                  <p className="text-sm text-green-600">New images uploaded:</p>
                   {uploadedImages.map((img, index) => (
                     <p key={index} className="text-xs truncate">{img.url}</p>
                   ))}
@@ -268,16 +317,26 @@ const AddPlant = () => {
           </div>
         </div>
         
-        <button
-          type="submit"
-          disabled={loading.addPlant}
-          className="bg-[#224229] text-white px-6 py-2 rounded-lg hover:bg-[#4b6250] transition-colors disabled:opacity-50"
-        >
-          {loading.addPlant ? 'Adding Plant...' : 'Add Plant'}
-        </button>
+        <div className="flex gap-4">
+          <button
+            type="submit"
+            disabled={loading.updatePlant}
+            className="bg-[#224229] text-white px-6 py-2 rounded-lg hover:bg-[#4b6250] transition-colors disabled:opacity-50"
+          >
+            {loading.updatePlant ? 'Updating Plant...' : 'Update Plant'}
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => navigate('/seller/plants')}
+            className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
       </form>
     </div>
   );
 };
 
-export default AddPlant;
+export default EditPlant;
