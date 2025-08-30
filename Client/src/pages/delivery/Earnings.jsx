@@ -11,6 +11,21 @@ const Earnings = () => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [isLoadingEarnings, setIsLoadingEarnings] = useState(false);
   
+  // Helper function to safely format price
+  const formatPrice = (value) => {
+    const numValue = parseFloat(value);
+    return isNaN(numValue) ? '0.00' : numValue.toFixed(2);
+  };
+
+  // Helper function to calculate delivery fee
+  const getDeliveryFee = (order) => {
+    if (order.delivery_fee || order.delivery_cost) {
+      return formatPrice(order.delivery_fee || order.delivery_cost);
+    }
+    const totalAmount = parseFloat(order.total_amount);
+    return isNaN(totalAmount) ? '0.00' : (totalAmount * 0.05).toFixed(2);
+  };
+  
   // Handle undefined data gracefully
   const completedDeliveries = dashboardData?.completed_assignments || [];
   const stats = dashboardData?.stats || {};
@@ -166,7 +181,7 @@ const Earnings = () => {
                   {monthData.orders.slice(0, 5).map((order, orderIndex) => (
                     <div key={orderIndex} className="flex justify-between items-center bg-gray-50 p-2 rounded text-sm">
                       <span>Order #{order.order_number}</span>
-                      <span className="font-medium">${(order.delivery_fee || 0).toFixed(2)}</span>
+                      <span className="font-medium">${formatPrice(order.delivery_fee)}</span>
                     </div>
                   ))}
                   {monthData.orders.length > 5 && (
@@ -217,12 +232,12 @@ const Earnings = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="font-medium">Amount:</span>
-                    <span className="font-medium">${delivery.total_amount?.toFixed(2) || '0.00'}</span>
+                    <span className="font-medium">${formatPrice(delivery.total_amount)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="font-medium">Delivery Fee:</span>
                     <span className="font-medium text-green-600">
-                      ${delivery.delivery_fee?.toFixed(2) || (delivery.total_amount * 0.05)?.toFixed(2) || '0.00'}
+                      ${getDeliveryFee(delivery)}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -240,10 +255,10 @@ const Earnings = () => {
                   {new Date(delivery.order_date).toLocaleDateString()}
                 </div>
                 <div className="hidden md:grid col-span-2 items-center text-right">
-                  ${delivery.total_amount?.toFixed(2) || '0.00'}
+                  ${formatPrice(delivery.total_amount)}
                 </div>
                 <div className="hidden md:grid col-span-2 items-center text-right font-medium text-green-600">
-                  ${delivery.delivery_fee?.toFixed(2) || (delivery.total_amount * 0.05)?.toFixed(2) || '0.00'}
+                  ${getDeliveryFee(delivery)}
                 </div>
                 <div className="hidden md:grid col-span-2 items-center text-right">
                   <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">

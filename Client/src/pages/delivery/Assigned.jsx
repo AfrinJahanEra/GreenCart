@@ -11,6 +11,21 @@ const Assigned = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [statusUpdating, setStatusUpdating] = useState({});
 
+  // Helper function to safely format price
+  const formatPrice = (value) => {
+    const numValue = parseFloat(value);
+    return isNaN(numValue) ? '0.00' : numValue.toFixed(2);
+  };
+
+  // Helper function to calculate delivery fee
+  const getDeliveryFee = (order) => {
+    if (order.delivery_cost) {
+      return formatPrice(order.delivery_cost);
+    }
+    const totalAmount = parseFloat(order.total_amount);
+    return isNaN(totalAmount) ? '0.00' : (totalAmount * 0.05).toFixed(2);
+  };
+
   // Fetch assigned orders on component mount
   useEffect(() => {
     const loadAssignedOrders = async () => {
@@ -176,8 +191,8 @@ const Assigned = () => {
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className="font-bold text-lg">${(order.total_amount || 0).toFixed(2)}</span>
-                  <p className="text-sm text-gray-500">Delivery Fee: ${(order.delivery_cost || order.total_amount * 0.05).toFixed(2)}</p>
+                  <span className="font-bold text-lg">${formatPrice(order.total_amount)}</span>
+                  <p className="text-sm text-gray-500">Delivery Fee: ${getDeliveryFee(order)}</p>
                 </div>
               </div>
               
@@ -241,10 +256,10 @@ const Assigned = () => {
                       <div className="bg-gray-50 p-2 rounded text-xs max-h-20 overflow-y-auto">
                         {order.items_summary || 'No items listed'}
                       </div>
-                      <div><strong>Total:</strong> ${(order.total_amount || 0).toFixed(2)}</div>
+                      <div><strong>Total:</strong> ${formatPrice(order.total_amount)}</div>
                       <div><strong>Your Fee:</strong> 
                         <span className="text-green-600 font-medium ml-1">
-                          ${(order.delivery_cost || order.total_amount * 0.05).toFixed(2)}
+                          ${getDeliveryFee(order)}
                         </span>
                       </div>
                     </div>
