@@ -86,12 +86,9 @@ export const plantCollectionAPI = {
 
 export const plantDetailAPI = {
   getPlantDetails: (plantId) => api.get(`/plant_detail/plant/${plantId}/`),
-  addToCart: (cartData) => api.post('/plant_detail/cart/add/', cartData),
-  getReviews: (plantId) => api.get(`/plant_detail/reviews/${plantId}/`),
-  addReview: (plantId, userId, reviewData) => 
-    api.post(`/plant_detail/review/add/${plantId}/${userId}/`, reviewData),
-  deleteReview: (requestorId, reviewId) => 
-    api.post(`/plant_detail/review/delete/${requestorId}/`, { review_id: reviewId }),
+  addToCart: (cartData) => api.post('/plant_detail/add-to-cart/', cartData),
+  addReview: (plantId, reviewData) => 
+    api.post(`/plant_detail/add-review/${plantId}/`, reviewData),
 };
 
 export const adminAPI = {
@@ -106,6 +103,17 @@ export const adminAPI = {
   getOrderOverview: () => api.get('/admin_dashboard/order-overview/'),
   getLowStockDetails: () => api.get('/admin_dashboard/low-stock-details/'),
   getDeliveryAgentPerformance: () => api.get('/admin_dashboard/delivery-agent-performance/'),
+  getAvailableDeliveryAgents: (deliveryDate = null) => {
+    const url = deliveryDate 
+      ? `/admin_dashboard/available-delivery-agents/?delivery_date=${deliveryDate}`
+      : '/admin_dashboard/available-delivery-agents/';
+    return api.get(url);
+  },
+  deleteCustomer: (requestorId, customerId) => 
+    api.post('/admin_dashboard/delete-customer/', { 
+      requestor_id: requestorId, 
+      customer_id: customerId 
+    }),
 };
 
 export const sellerAPI = {
@@ -132,6 +140,7 @@ export const sellerAPI = {
 export const deliveryAgentAPI = {
   getDashboard: (agentId) => api.get(`/delivery_agent/dashboard/${agentId}/`),
   markDeliveryCompleted: (data) => api.post('/delivery_agent/mark-delivered/', data),
+  confirmDelivery: (data) => api.post('/delivery_agent/confirm-delivery/', data),
   getAssignmentCount: (agentId, status) => 
     api.get(`/delivery_agent/assignment-count/${agentId}/?status=${status || ''}`),
   getMonthlyEarnings: (agentId, year) => 
@@ -186,17 +195,18 @@ export const customerOrdersAPI = {
 export const cartAPI = {
   getCart: (userId) => api.get(`/cart/${userId}/`),
   addToCart: (cartData) => api.post('/cart/add/', cartData),
-  updateCartItem: (cartId, quantity) => api.put(`/cart/${cartId}/`, { quantity }),
-  removeFromCart: (cartId) => api.delete(`/cart/${cartId}/`),
-  clearCart: (userId) => api.delete(`/cart/clear/${userId}/`),
+  toggleCartItem: (data) => api.post('/cart/toggle/', data),
+  updateCartQuantity: (data) => api.post('/cart/update_quantity/', data),
+  removeFromCart: (data) => api.post('/cart/delete/', data),
 };
 
-export const addReview = (plantId, userId, reviewData) => {
-  return plantDetailAPI.addReview(plantId, userId, reviewData);
+export const addReview = (plantId, reviewData) => {
+  return plantDetailAPI.addReview(plantId, reviewData);
 };
 
 export const deleteReview = (requestorId, reviewId) => {
-  return plantDetailAPI.deleteReview(requestorId, reviewId);
+  // This functionality is not implemented in the backend yet
+  return Promise.reject(new Error('Delete review functionality not implemented'));
 };
 
 export default api;

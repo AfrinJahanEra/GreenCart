@@ -5,10 +5,12 @@ import Footer from '../components/Footer';
 import Button from '../components/Button';
 import { theme } from '../theme';
 import { usePlantDetail, usePlantReviews } from '../hooks/usePlantDetail';
-import { addReview, deleteReview } from '../services/api';
+import { plantDetailAPI, cartAPI } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const PlantDetails = () => {
   const { id } = useParams();
+  const { user } = useAuth(); // Use AuthContext instead of localStorage
   const [selectedSize, setSelectedSize] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [isFavorite, setIsFavorite] = useState(false);
@@ -27,67 +29,81 @@ const PlantDetails = () => {
   const handleAddReview = async (e) => {
     e.preventDefault();
     try {
-      // Get current user ID from your authentication context
-      const userId = localStorage.getItem('userId'); // Adjust based on your auth implementation
+      if (!user || !user.user_id) {
+        alert('Please login to add a review');
+        return;
+      }
       
-      const response = await addReview(id, userId, {
+      const orderId = prompt('Please enter your order ID to add a review:');
+      
+      if (!orderId) {
+        alert('Order ID is required to add a review');
+        return;
+      }
+      
+      const reviewData = {
+        user_id: user.user_id,
+        order_id: parseInt(orderId),
         rating: newReview.rating,
         review_text: newReview.text
-      });
+      };
       
-      if (response.success) {
-        // Refresh reviews
-        const updatedReviews = [...reviews, {
-          id: Date.now(), // Temporary ID until we fetch from server
-          user_id: userId,
-          reviewer_name: 'You', // This should come from user profile
-          rating: newReview.rating,
-          review_text: newReview.text,
-          review_date: 'Just now',
-          is_approved: false
-        }];
-        
-        setReviews(updatedReviews);
-        setNewReview({ rating: 5, text: '' });
-        setShowReviewForm(false);
+      const response = await plantDetailAPI.addReview(id, reviewData);
+      
+      if (response.data.success) {
+        alert('Review added successfully!');
+        // Refresh the page to get updated reviews
+        window.location.reload();
+      } else {
+        throw new Error(response.data.error || 'Failed to add review');
       }
     } catch (error) {
       console.error('Error adding review:', error);
-      alert('Failed to add review. Please try again.');
+      alert(error.response?.data?.error || 'Failed to add review. Please try again.');
     }
   };
 
   const handleDeleteReview = async (reviewId) => {
-    try {
-      // Get current user ID from your authentication context
-      const userId = localStorage.getItem('userId'); // Adjust based on your auth implementation
-      
-      const response = await deleteReview(userId, reviewId);
-      
-      if (response.success) {
-        // Remove the review from local state
-        const updatedReviews = reviews.filter(review => review.review_id !== reviewId);
-        setReviews(updatedReviews);
-      }
-    } catch (error) {
-      console.error('Error deleting review:', error);
-      alert('Failed to delete review. Please try again.');
-    }
+    // This functionality is not implemented in the backend
+    alert('Delete review functionality is not yet implemented.');
   };
 
-  const addToCart = () => {
+  const addToCart = async () => {
     if (!plant) return;
     
-    const item = {
-      id: plant.plant_id,
-      name: plant.name,
-      price: plant.sizes[selectedSize].price,
-      image: plant.primary_image,
-      size: plant.sizes[selectedSize].name,
-      quantity: quantity
-    };
-    console.log('Added to cart:', item);
-    alert(`${quantity} ${plant.name} (${plant.sizes[selectedSize].name}) added to cart!`);
+    try {
+      if (!user || !user.user_id) {
+        alert('Please login to add items to cart');
+        return;
+      }
+
+      const sizes = formatSizes();
+      const selectedSizeData = sizes[selectedSize];
+      
+      if (!selectedSizeData) {
+        alert('Please select a valid size');
+        return;
+      }
+      
+      // Note: Backend expects size as string, not size_id
+      const cartData = {
+        user_id: user.user_id,
+        plant_id: plant.plant_id,
+        size: selectedSizeData.name, // Backend uses size name, not ID
+        quantity: quantity
+      };
+
+      const response = await cartAPI.addToCart(cartData);
+      
+      if (response.data.success) {
+        alert(`${quantity} ${plant.name} (${selectedSizeData.name}) added to cart!`);
+      } else {
+        throw new Error(response.data.error || 'Failed to add to cart');
+      }
+    } catch (error) {
+      console.error('Error adding to cart:', error);
+      alert(error.response?.data?.error || 'Failed to add to cart. Please try again.');
+    }
   };
 
   const getVisibleImages = () => {
@@ -117,15 +133,11 @@ const PlantDetails = () => {
   const formatSizes = () => {
     if (!plant || !plant.sizes) return [];
     
-    return Object.entries(plant.sizes).map(([name, price]) => ({
-      name,
-      price: parseFloat(price)
+    return plant.sizes.map(size => ({
+      id: size.size_id,
+      name: size.size_name,
+      price: parseFloat(plant.base_price) + parseFloat(size.price_adjustment)
     }));
-  };
-
-  // Get current user ID (you should replace this with your actual auth context)
-  const getCurrentUserId = () => {
-    return localStorage.getItem('userId'); // Adjust based on your auth implementation
   };
 
   if (plantLoading) {
@@ -153,8 +165,7 @@ const PlantDetails = () => {
   }
 
   const sizes = formatSizes();
-  const allImages = [plant.primary_image, ...plant.image_urls];
-  const currentUserId = getCurrentUserId();
+  const allImages = plant?.image_urls ? [plant.primary_image, ...plant.image_urls] : [plant?.primary_image].filter(Boolean);
 
   return (
     <div className="bg-white">
@@ -240,7 +251,9 @@ const PlantDetails = () => {
             
             <div className="flex flex-col gap-4 sm:gap-6 lg:sticky lg:top-4 bg-white p-4 sm:p-6">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.colors.primary }}>${sizes[selectedSize].price}</h2>
+                <h2 className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.colors.primary }}>
+                  ${sizes.length > 0 ? sizes[selectedSize]?.price?.toFixed(2) : plant?.base_price?.toFixed(2)}
+                </h2>
                 <button 
                   onClick={toggleFavorite}
                   className="p-1 sm:p-2 text-gray-400 hover:text-red-500 transition-colors"
@@ -262,7 +275,7 @@ const PlantDetails = () => {
                 <div className="space-y-2 sm:space-y-3 mt-2 sm:mt-3">
                   {sizes.map((size, index) => (
                     <div 
-                      key={index}
+                      key={size.id || index}
                       onClick={() => setSelectedSize(index)}
                       className={`p-2 sm:p-3 border rounded cursor-pointer transition-colors ${
                         index === selectedSize ? 'border-green-500 bg-green-50' : 'border-gray-300 hover:border-green-300'
@@ -270,7 +283,7 @@ const PlantDetails = () => {
                     >
                       <div className="flex justify-between items-center">
                         <span className="font-medium text-xs sm:text-sm lg:text-base">{size.name}</span>
-                        <span className="font-bold text-xs sm:text-sm lg:text-base" style={{ color: theme.colors.primary }}>${size.price}</span>
+                        <span className="font-bold text-xs sm:text-sm lg:text-base" style={{ color: theme.colors.primary }}>${size.price?.toFixed(2)}</span>
                       </div>
                     </div>
                   ))}
@@ -352,29 +365,19 @@ const PlantDetails = () => {
                   <div>Loading reviews...</div>
                 ) : reviewsError ? (
                   <div className="text-red-600">Error loading reviews: {reviewsError}</div>
-                ) : reviews.length === 0 ? (
+                ) : (reviews.length === 0 ? (
                   <div className="text-gray-500 italic">No reviews yet. Be the first to review!</div>
                 ) : (
                   reviews.map(review => (
                     <div key={review.review_id} className="mb-4 sm:mb-6 pb-4 sm:pb-6 border-b border-gray-200 last:border-b-0">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-2 sm:gap-3">
-                          <div className="text-yellow-500 text-sm sm:text-base">{'★'.repeat(review.rating)}</div>
-                          <span className="text-xs sm:text-sm text-gray-500">{review.review_date}</span>
-                        </div>
-                        {currentUserId && review.user_id.toString() === currentUserId && (
-                          <button 
-                            onClick={() => handleDeleteReview(review.review_id)}
-                            className="text-red-500 text-xs sm:text-sm hover:text-red-700"
-                          >
-                            Delete
-                          </button>
-                        )}
+                      <div className="flex items-center gap-2 sm:gap-3">
+                        <div className="text-yellow-500 text-sm sm:text-base">{'★'.repeat(review.rating)}</div>
+                        <span className="text-xs sm:text-sm text-gray-500">{review.review_date}</span>
                       </div>
                       <p className="mt-1 sm:mt-2 text-xs sm:text-sm lg:text-base text-gray-700 italic">"{review.review_text}"</p>
-                      <p className="text-right text-xs sm:text-sm text-gray-600 mt-1 sm:mt-2">– {review.reviewer_name}</p>
+                      <p className="text-right text-xs sm:text-sm text-gray-600 mt-1 sm:mt-2">– {review.author}</p>
                     </div>
-                  ))
+                  )))
                 )}
               </div>
             </div>

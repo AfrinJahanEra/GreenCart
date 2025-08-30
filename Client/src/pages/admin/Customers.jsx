@@ -1,11 +1,16 @@
 import { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import { theme } from '../../theme';
 
 const Customers = () => {
-  const { customers, loading, error, refreshAllData } = useOutletContext();
+  const { customers, loading, error, deleteCustomer, refreshAllData } = useOutletContext();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [customerToDelete, setCustomerToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const [newCustomer, setNewCustomer] = useState({
     name: '',
     email: '',
@@ -35,6 +40,38 @@ const Customers = () => {
     console.log('Add customer:', newCustomer);
     setShowAddModal(false);
     setNewCustomer({ name: '', email: '', phone: '', address: '' });
+  };
+
+  const handleDeleteClick = (customer) => {
+    setCustomerToDelete(customer);
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!customerToDelete || !user?.user_id) return;
+    
+    setDeleting(true);
+    try {
+      const result = await deleteCustomer(customerToDelete.user_id, user.user_id);
+      
+      if (result.success) {
+        alert('Customer deleted successfully!');
+        setShowDeleteModal(false);
+        setCustomerToDelete(null);
+      } else {
+        alert('Failed to delete customer: ' + (result.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('An error occurred while deleting the customer.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setShowDeleteModal(false);
+    setCustomerToDelete(null);
   };
 
   const handleRetry = () => {
@@ -128,9 +165,13 @@ const Customers = () => {
                   <div className="flex justify-between pt-2">
                     <span className="font-medium">Actions:</span>
                     <div className="flex gap-2">
-                      <button className="text-blue-500 hover:text-blue-700">
+                      <button 
+                        onClick={() => handleDeleteClick(customer)}
+                        className="text-red-500 hover:text-red-700"
+                        title="Delete Customer"
+                      >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                          <path fillRule="evenodd" d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9zM4 5a2 2 0 012-2v1a1 1 0 001 1h6a1 1 0 001-1V3a2 2 0 012 2v1H4V5zM3 8a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm2 3a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1z" clipRule="evenodd" />
                         </svg>
                       </button>
                     </div>
@@ -144,9 +185,13 @@ const Customers = () => {
                 <div className="hidden md:grid col-span-2 items-center">{customer.phone || 'N/A'}</div>
                 <div className="hidden md:grid col-span-2 items-center">{customer.activity_count || 0}</div>
                 <div className="hidden md:grid col-span-2 items-center flex gap-2">
-                  <button className="text-blue-500 hover:text-blue-700">
+                  <button 
+                    onClick={() => handleDeleteClick(customer)}
+                    className="text-red-500 hover:text-red-700"
+                    title="Delete Customer"
+                  >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                      <path fillRule="evenodd" d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9zM4 5a2 2 0 012-2v1a1 1 0 001 1h6a1 1 0 001-1V3a2 2 0 012 2v1H4V5zM3 8a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm2 3a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1z" clipRule="evenodd" />
                     </svg>
                   </button>
                 </div>
@@ -231,6 +276,56 @@ const Customers = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Customer Confirmation Modal */}
+      {showDeleteModal && customerToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-lg w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-red-600">Confirm Delete</h2>
+              <button 
+                onClick={handleDeleteCancel} 
+                className="text-gray-500 hover:text-gray-700"
+                disabled={deleting}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="mb-6">
+              <p className="text-gray-700 mb-2">
+                Are you sure you want to delete this customer?
+              </p>
+              <div className="bg-gray-100 p-3 rounded">
+                <p className="font-medium">{`${customerToDelete.first_name} ${customerToDelete.last_name}`}</p>
+                <p className="text-sm text-gray-600">{customerToDelete.email}</p>
+              </div>
+              <p className="text-sm text-red-600 mt-2">
+                This action cannot be undone. The customer account will be deactivated.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleDeleteCancel}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors order-2 sm:order-1"
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteConfirm}
+                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors order-1 sm:order-2 disabled:opacity-50"
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting...' : 'Delete Customer'}
+              </button>
+            </div>
           </div>
         </div>
       )}

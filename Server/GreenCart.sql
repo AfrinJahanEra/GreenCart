@@ -961,6 +961,8 @@ EXCEPTION
 END;
 /
 
+
+
 -- Create a separate procedure for reviews
 CREATE OR REPLACE PROCEDURE get_plant_reviews (
     p_plant_id IN NUMBER,
@@ -2103,7 +2105,7 @@ BEGIN
         CASE 
             WHEN p_role_name = 'customer' THEN 
                 (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.user_id)
-            WHEN p_role_name = 'delivery' THEN 
+            WHEN p_role_name = 'delivery_agent' THEN 
                 (SELECT COUNT(*) FROM order_assignments oa 
                  JOIN delivery_agents da ON oa.agent_id = da.agent_id 
                  WHERE da.user_id = u.user_id)
@@ -2155,7 +2157,7 @@ BEGIN
             LEFT JOIN order_assignments oa ON da.agent_id = oa.agent_id
             LEFT JOIN orders o ON oa.order_id = o.order_id
             LEFT JOIN order_statuses os ON o.status_id = os.status_id
-            WHERE r.role_name = 'delivery' AND u.is_active = 1
+            WHERE r.role_name = 'delivery_agent' AND u.is_active = 1
             AND os.status_name = 'Delivered'
             GROUP BY da.agent_id
         );

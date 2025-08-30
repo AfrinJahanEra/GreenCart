@@ -53,8 +53,37 @@ export const useDeliveryAgent = (agentId) => {
     }
   }, [agentId]);
 
-  // Mark delivery as completed
-  const markDeliveryCompleted = async (orderId, notes = '') => {
+  // Mark delivery as completed with enhanced status management
+  const markDeliveryCompleted = async (orderId, notes = '', confirmationType = 'delivered') => {
+    try {
+      setLoading(prev => ({ ...prev, markDelivery: true }));
+      setError(prev => ({ ...prev, markDelivery: null }));
+      
+      const response = await deliveryAgentAPI.confirmDelivery({
+        order_id: orderId,
+        agent_id: agentId,
+        notes,
+        type: confirmationType
+      });
+      
+      if (response.data.success) {
+        // Refresh dashboard data after successful delivery
+        await fetchDashboard();
+        return { success: true, message: response.data.message };
+      } else {
+        throw new Error(response.data.error || 'Failed to confirm delivery');
+      }
+    } catch (err) {
+      const errorMessage = handleApiError(err);
+      setError(prev => ({ ...prev, markDelivery: errorMessage }));
+      return { success: false, error: errorMessage };
+    } finally {
+      setLoading(prev => ({ ...prev, markDelivery: false }));
+    }
+  };
+
+  // Legacy mark delivery function for backward compatibility
+  const markDeliveryCompletedLegacy = async (orderId, notes = '') => {
     try {
       setLoading(prev => ({ ...prev, markDelivery: true }));
       setError(prev => ({ ...prev, markDelivery: null }));
@@ -149,6 +178,7 @@ export const useDeliveryAgent = (agentId) => {
     error,
     fetchDashboard,
     markDeliveryCompleted,
+    markDeliveryCompletedLegacy,
     fetchAssignmentCount,
     fetchMonthlyEarnings,
     refreshAllData

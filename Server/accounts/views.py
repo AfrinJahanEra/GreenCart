@@ -177,7 +177,8 @@ def login(request):
                 return JsonResponse({
                     'success': True,
                     'message': 'Login successful',
-                    'user': user_info
+                    'user': user_info,
+                    'token': f'auth_token_{user_id}_{role}'
                 })
                 
         except Exception as e:

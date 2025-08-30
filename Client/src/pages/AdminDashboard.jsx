@@ -17,7 +17,10 @@ const AdminDashboard = () => {
     error,
     lowStockAlerts,
     assignDeliveryAgent,
+    getAvailableDeliveryAgents,
     applyDiscount,
+    deleteCustomer,
+    refreshAllData,
   } = useAdminDashboard();
 
   const handleTabChange = (tab) => {
@@ -134,7 +137,10 @@ const AdminDashboard = () => {
             loading,
             error,
             assignDeliveryAgent,
+            getAvailableDeliveryAgents,
             applyDiscount,
+            deleteCustomer,
+            refreshAllData,
           }} />
         </div>
       </div>

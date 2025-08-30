@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useDeliveryAgent } from '../hooks/useDeliveryAgent';
 
 const DeliveryDashboard = () => {
-  const [activeTab, setActiveTab] = useState('assigned');
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -57,6 +57,14 @@ const DeliveryDashboard = () => {
           
           <nav>
             <ul className="space-y-2">
+              <li>
+                <button
+                  onClick={() => handleTabChange('dashboard')}
+                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${activeTab === 'dashboard' ? 'bg-green-700' : 'hover:bg-green-800'}`}
+                >
+                  Dashboard
+                </button>
+              </li>
               <li>
                 <button
                   onClick={() => handleTabChange('assigned')}

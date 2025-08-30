@@ -167,7 +167,11 @@ export const useAdminDashboard = () => {
     try {
       setError(prev => ({ ...prev, orders: null }));
       
+      console.log('Assigning delivery agent:', { orderId, agentId });
+      
       const response = await adminAPI.assignDeliveryAgent(orderId, agentId);
+      
+      console.log('Assignment response:', response.data);
       
       if (response.data.status === 'success') {
         await fetchOrders(); // Refresh orders after assignment
@@ -176,9 +180,33 @@ export const useAdminDashboard = () => {
         throw new Error(response.data.message || 'Failed to assign delivery agent');
       }
     } catch (err) {
+      console.error('Assignment error details:', err);
+      console.error('Error response:', err.response?.data);
+      
       const errorMessage = handleApiError(err);
       setError(prev => ({ ...prev, orders: errorMessage }));
-      return { success: false, error: errorMessage };
+      
+      // Return more specific error message from backend
+      return { 
+        success: false, 
+        error: err.response?.data?.message || errorMessage 
+      };
+    }
+  };
+
+  // Get available delivery agents
+  const getAvailableDeliveryAgents = async (deliveryDate = null) => {
+    try {
+      const response = await adminAPI.getAvailableDeliveryAgents(deliveryDate);
+      
+      if (response.data.status === 'success') {
+        return { success: true, data: response.data.data };
+      } else {
+        throw new Error(response.data.message || 'Failed to fetch available delivery agents');
+      }
+    } catch (err) {
+      const errorMessage = handleApiError(err);
+      return { success: false, error: errorMessage, data: [] };
     }
   };
 
@@ -198,6 +226,27 @@ export const useAdminDashboard = () => {
     } catch (err) {
       const errorMessage = handleApiError(err);
       setError(prev => ({ ...prev, lowStockAlerts: errorMessage }));
+      return { success: false, error: errorMessage };
+    }
+  };
+
+  // Delete customer
+  const deleteCustomer = async (customerId, requestorId) => {
+    try {
+      setError(prev => ({ ...prev, customers: null }));
+      
+      const response = await adminAPI.deleteCustomer(requestorId, customerId);
+      
+      if (response.data.status === 'success') {
+        await fetchCustomers(); // Refresh customers after deletion
+        await fetchDashboardStats(); // Update stats
+        return { success: true, message: response.data.message };
+      } else {
+        throw new Error(response.data.message || 'Failed to delete customer');
+      }
+    } catch (err) {
+      const errorMessage = handleApiError(err);
+      setError(prev => ({ ...prev, customers: errorMessage }));
       return { success: false, error: errorMessage };
     }
   };
@@ -235,7 +284,9 @@ export const useAdminDashboard = () => {
     fetchOrders,
     fetchLowStockAlerts,
     assignDeliveryAgent,
+    getAvailableDeliveryAgents,
     applyDiscount,
+    deleteCustomer,
     refreshAllData
   };
 };

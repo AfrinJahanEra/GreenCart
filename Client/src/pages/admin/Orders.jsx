@@ -1,12 +1,34 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { theme } from '../../theme';
 
 const Orders = () => {
-  const { orders, deliveryAgents, assignDeliveryAgent, loading, error } = useOutletContext();
+  const { orders, assignDeliveryAgent, getAvailableDeliveryAgents, loading, error } = useOutletContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [assigningOrder, setAssigningOrder] = useState(null);
   const [selectedAgent, setSelectedAgent] = useState('');
+  const [availableAgents, setAvailableAgents] = useState([]);
+  const [loadingAgents, setLoadingAgents] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+
+  // Fetch available delivery agents when opening assignment modal
+  const fetchAvailableAgents = async () => {
+    setLoadingAgents(true);
+    try {
+      const result = await getAvailableDeliveryAgents();
+      if (result.success) {
+        setAvailableAgents(result.data);
+      } else {
+        console.error('Failed to fetch available agents:', result.error);
+        setAvailableAgents([]);
+      }
+    } catch (error) {
+      console.error('Error fetching available agents:', error);
+      setAvailableAgents([]);
+    } finally {
+      setLoadingAgents(false);
+    }
+  };
 
   const filteredOrders = orders.filter(order =>
     order.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -15,13 +37,52 @@ const Orders = () => {
   );
 
   const handleAssignAgent = async (orderId) => {
-    if (!selectedAgent) {
-      await assignDeliveryAgent(orderId, null); // Unassign
-    } else {
-      await assignDeliveryAgent(orderId, selectedAgent);
+    const selectedAgentData = selectedAgent ? availableAgents.find(agent => agent.agent_id === selectedAgent) : null;
+    
+    if (selectedAgent && selectedAgentData) {
+      const confirmMessage = `Assign order to ${selectedAgentData.name}?\n\nAgent Details:\n- Email: ${selectedAgentData.email}\n- Phone: ${selectedAgentData.phone}\n- Available Slots: ${selectedAgentData.available_slots}/3\n- Vehicle: ${selectedAgentData.vehicle_type || 'N/A'}\n\nAfter assignment, this agent will have ${selectedAgentData.available_slots - 1} available slots.`;
+      
+      if (!confirm(confirmMessage)) {
+        return;
+      }
+    } else if (!selectedAgent) {
+      if (!confirm('Remove current delivery agent assignment from this order?')) {
+        return;
+      }
     }
-    setAssigningOrder(null);
-    setSelectedAgent('');
+    
+    try {
+      setAssigning(true);
+      console.log('Attempting to assign agent:', { orderId, selectedAgent });
+      
+      const result = await assignDeliveryAgent(orderId, selectedAgent || null);
+      
+      console.log('Assignment result:', result);
+      
+      if (result.success) {
+        alert(selectedAgent ? 'Delivery agent assigned successfully!' : 'Order unassigned successfully!');
+        setAssigningOrder(null);
+        setSelectedAgent('');
+        // Refresh available agents to show updated slot counts
+        if (selectedAgent) {
+          fetchAvailableAgents();
+        }
+      } else {
+        console.error('Assignment failed:', result.error);
+        alert(`Failed to assign delivery agent: ${result.error || 'Unknown error occurred'}`);
+      }
+    } catch (error) {
+      console.error('Assignment exception:', error);
+      alert(`An error occurred while assigning the delivery agent: ${error.message || 'Please try again later'}`);
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const handleOpenAssignModal = (orderId, currentAgentId) => {
+    setAssigningOrder(orderId);
+    setSelectedAgent(currentAgentId || '');
+    fetchAvailableAgents(); // Fetch available agents when opening modal
   };
 
   return (
@@ -109,10 +170,7 @@ const Orders = () => {
                   <span className="font-medium">Actions:</span>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => {
-                        setAssigningOrder(order.order_id);
-                        setSelectedAgent(order.agent_id || '');
-                      }}
+                      onClick={() => handleOpenAssignModal(order.order_id, order.agent_id)}
                       className="text-blue-500 hover:text-blue-700 text-sm flex items-center gap-1"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -152,10 +210,7 @@ const Orders = () => {
               <div className="hidden md:grid col-span-2 items-center">{order.agent_name || 'Unassigned'}</div>
               <div className="hidden md:grid col-span-2 items-center flex gap-2">
                 <button
-                  onClick={() => {
-                    setAssigningOrder(order.order_id);
-                    setSelectedAgent(order.agent_id || '');
-                  }}
+                  onClick={() => handleOpenAssignModal(order.order_id, order.agent_id)}
                   className="text-blue-500 hover:text-blue-700 text-sm flex items-center gap-1"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -180,9 +235,19 @@ const Orders = () => {
       </div>
       {assigningOrder && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white p-6 rounded-lg w-full max-w-md">
+          <div className="bg-white p-6 rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold" style={{ color: theme.colors.primary }}>Assign Delivery Agent</h2>
+              <div>
+                <h2 className="text-xl font-bold" style={{ color: theme.colors.primary }}>Assign Delivery Agent</h2>
+                {(() => {
+                  const currentOrder = orders.find(o => o.order_id === assigningOrder);
+                  return currentOrder ? (
+                    <div className="text-sm text-gray-600 mt-1">
+                      Order #{currentOrder.order_number} - {currentOrder.customer_name} - ${currentOrder.total_amount?.toFixed(2)}
+                    </div>
+                  ) : null;
+                })()}
+              </div>
               <button onClick={() => setAssigningOrder(null)} className="text-gray-500 hover:text-gray-700">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -190,31 +255,86 @@ const Orders = () => {
               </button>
             </div>
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>Select Delivery Agent</label>
-              <select
-                value={selectedAgent}
-                onChange={(e) => setSelectedAgent(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              >
-                <option value="">Unassign</option>
-                {deliveryAgents.map(agent => (
-                  <option key={agent.id} value={agent.id}>{agent.name}</option>
-                ))}
-              </select>
+              <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.primary }}>Select Delivery Agent</label>
+              {loadingAgents ? (
+                <div className="text-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#224229] mx-auto"></div>
+                  <span className="text-sm text-gray-500 mt-2">Loading available agents...</span>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  <div className="border border-gray-300 rounded-lg p-3 hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedAgent('')}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">Unassign Order</div>
+                        <div className="text-sm text-gray-500">Remove current delivery agent assignment</div>
+                      </div>
+                      <input
+                        type="radio"
+                        name="agent"
+                        value=""
+                        checked={selectedAgent === ''}
+                        onChange={() => setSelectedAgent('')}
+                        className="text-[#224229] focus:ring-[#224229]"
+                      />
+                    </div>
+                  </div>
+                  {availableAgents.map(agent => (
+                    <div 
+                      key={agent.agent_id} 
+                      className="border border-gray-300 rounded-lg p-3 hover:bg-gray-50 cursor-pointer"
+                      onClick={() => setSelectedAgent(agent.agent_id)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="font-medium">{agent.name}</div>
+                          <div className="text-sm text-gray-600">{agent.email}</div>
+                          <div className="text-sm text-gray-600">{agent.phone}</div>
+                          <div className="text-xs text-green-600 mt-1">
+                            Available Slots: {agent.available_slots}/3 • Vehicle: {agent.vehicle_type || 'N/A'}
+                          </div>
+                        </div>
+                        <input
+                          type="radio"
+                          name="agent"
+                          value={agent.agent_id}
+                          checked={selectedAgent === agent.agent_id}
+                          onChange={() => setSelectedAgent(agent.agent_id)}
+                          className="text-[#224229] focus:ring-[#224229]"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  {availableAgents.length === 0 && (
+                    <div className="text-center py-4 text-gray-500">
+                      No delivery agents available with free slots
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex flex-col sm:flex-row justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setAssigningOrder(null)}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors order-2 sm:order-1"
+                disabled={assigning}
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleAssignAgent(assigningOrder)}
-                className="bg-[#224229] text-white px-4 py-2 rounded-lg hover:bg-[#4b6250] transition-colors order-1 sm:order-2"
+                className="bg-[#224229] text-white px-4 py-2 rounded-lg hover:bg-[#4b6250] transition-colors order-1 sm:order-2 disabled:opacity-50"
+                disabled={assigning || (!selectedAgent && selectedAgent !== '')}
               >
-                Assign
+                {assigning ? (
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    {selectedAgent ? 'Assigning...' : 'Unassigning...'}
+                  </div>
+                ) : (
+                  selectedAgent ? 'Assign Agent' : 'Remove Assignment'
+                )}
               </button>
             </div>
           </div>

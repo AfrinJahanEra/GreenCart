@@ -3,14 +3,22 @@ import { useState, useEffect, useRef } from 'react';
 import html2pdf from 'html2pdf.js';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
+import ProfileSidebar from '../components/ProfileSidebar';
 import { theme } from '../theme';
+import { customerOrdersAPI } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const Order = () => {
   const { state } = useLocation();
   const navigate = useNavigate();
   const sidebarRef = useRef();
+  const { user } = useAuth(); // Use AuthContext
+  const [deliveryMethods, setDeliveryMethods] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showProfileSidebar, setShowProfileSidebar] = useState(false);
   const [order, setOrder] = useState({
     items: state?.items || [],
+    cartItems: state?.cartItems || [],
     deliveryMethod: null,
     customerInfo: {
       name: '',
@@ -19,7 +27,7 @@ const Order = () => {
       notes: ''
     },
     deliveryAgent: {
-      name: 'John Doe',
+      name: 'Delivery Agent',
       phone: '+1 (555) 987-6543',
       estimatedDelivery: ''
     },
@@ -32,28 +40,77 @@ const Order = () => {
     status: 'Processing'
   });
 
-  const deliveryMethods = [
-    { id: 1, name: 'Standard Delivery', price: 9.95, time: '3-5 business days' },
-    { id: 2, name: 'Express Delivery', price: 19.95, time: '1-2 business days' },
-    { id: 3, name: 'Store Pickup', price: 0, time: 'Ready in 1 hour' }
-  ];
-
+  // Pre-fill user information from AuthContext
   useEffect(() => {
-    if (!order.deliveryMethod) {
+    if (user) {
       setOrder(prev => ({
         ...prev,
-        deliveryMethod: deliveryMethods[0],
-        deliveryAgent: {
-          ...prev.deliveryAgent,
-          estimatedDelivery: calculateDeliveryDate(deliveryMethods[0].time)
+        customerInfo: {
+          name: user.first_name && user.last_name 
+            ? `${user.first_name} ${user.last_name}` 
+            : prev.customerInfo.name,
+          phone: user.phone || prev.customerInfo.phone,
+          address: user.address || prev.customerInfo.address,
+          notes: prev.customerInfo.notes
         }
       }));
     }
+  }, [user]);
+
+  // Fetch delivery methods on component mount
+  useEffect(() => {
+    const fetchDeliveryMethods = async () => {
+      try {
+        setLoading(true);
+        const response = await customerOrdersAPI.getDeliveryMethods();
+        
+        console.log('Delivery methods response:', response.data); // Debug log
+        
+        if (response.data.success) {
+          const methods = response.data.methods || [];
+          console.log('DEBUG: Received delivery methods:', methods); // Debug log
+          setDeliveryMethods(methods);
+          
+          // Set default delivery method
+          if (methods.length > 0) {
+            const defaultMethod = methods[0];
+            console.log('DEBUG: Setting default delivery method:', defaultMethod); // Debug log
+            setOrder(prev => ({
+              ...prev,
+              deliveryMethod: defaultMethod,
+              deliveryAgent: {
+                ...prev.deliveryAgent,
+                estimatedDelivery: calculateDeliveryDate(defaultMethod.time)
+              }
+            }));
+          } else {
+            console.warn('DEBUG: No delivery methods found in response');
+          }
+        } else {
+          console.error('Failed to fetch delivery methods:', response.data.error);
+          alert('Failed to load delivery methods: ' + (response.data.error || 'Unknown error'));
+        }
+      } catch (error) {
+        console.error('Error fetching delivery methods:', error);
+        alert('Failed to load delivery methods: ' + (error.response?.data?.error || error.message));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDeliveryMethods();
   }, []);
 
   const calculateDeliveryDate = (deliveryTime) => {
-    const days = deliveryTime.includes('3-5') ? 5 : 
-                deliveryTime.includes('1-2') ? 2 : 0;
+    // Add null/undefined check to prevent 'includes' error
+    if (!deliveryTime || typeof deliveryTime !== 'string') {
+      return 'TBD';
+    }
+    
+    // Extract first number from string like "3-5 days" or "1-2 days"
+    const match = deliveryTime.match(/\d+/);
+    const days = match ? parseInt(match[0]) : 3; // Default to 3 days if no match
+    
     const date = new Date();
     date.setDate(date.getDate() + days);
     return date.toLocaleDateString('en-US', { 
@@ -64,6 +121,7 @@ const Order = () => {
   };
 
   const handleDeliveryChange = (method) => {
+    console.log('DEBUG: Delivery method selected:', method); // Debug log
     setOrder(prev => ({
       ...prev,
       deliveryMethod: method,
@@ -85,6 +143,16 @@ const Order = () => {
     }));
   };
 
+  const handleProfileUpdate = (updatedInfo) => {
+    setOrder(prev => ({
+      ...prev,
+      customerInfo: {
+        ...prev.customerInfo,
+        ...updatedInfo
+      }
+    }));
+  };
+
   const handleDownloadPDF = () => {
     const element = sidebarRef.current;
     const opt = {
@@ -97,22 +165,80 @@ const Order = () => {
     html2pdf().from(element).set(opt).save();
   };
 
-  const handleSubmitOrder = () => {
+  const handleSubmitOrder = async () => {
+    console.log('DEBUG: handleSubmitOrder called');
+    console.log('DEBUG: Current order state:', order);
+    console.log('DEBUG: Delivery method:', order.deliveryMethod);
+    
     if (!order.customerInfo.name || !order.customerInfo.phone || !order.customerInfo.address) {
       alert('Please fill in all required fields');
       return;
     }
 
-    // In a real app, you would submit to backend here
-    console.log('Order submitted:', order);
-    alert('Order placed successfully!');
-    navigate('/order-confirmation', { state: { order } });
+    if (!order.deliveryMethod) {
+      alert('Please select a delivery method');
+      return;
+    }
+
+    const userId = user?.user_id;
+    if (!userId) {
+      alert('Please login to place an order');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // Create cart IDs string for backend
+      const cartIds = order.cartItems.map(item => item.cart_id).join(',');
+      console.log('DEBUG: Cart IDs:', cartIds);
+      
+      const orderData = {
+        user_id: userId,
+        delivery_method_id: order.deliveryMethod.id,
+        delivery_address: order.customerInfo.address,
+        delivery_notes: order.customerInfo.notes,
+        cart_ids: cartIds
+      };
+      
+      console.log('DEBUG: Sending order data:', orderData);
+
+      const response = await customerOrdersAPI.createOrder(orderData);
+      
+      if (response.data.success) {
+        const completedOrder = {
+          ...order,
+          orderId: response.data.order_id,
+          orderNumber: response.data.order_number || order.orderNumber,
+          totalAmount: response.data.total_amount
+        };
+        
+        alert('Order placed successfully!');
+        navigate('/order-confirmation', { state: { order: completedOrder } });
+      } else {
+        throw new Error(response.data.error || 'Failed to create order');
+      }
+    } catch (error) {
+      console.error('Error creating order:', error);
+      alert(error.response?.data?.error || 'Failed to place order. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const calculateTotal = () => {
-    const subtotal = order.items.reduce((total, item) => total + (item.price * item.quantity), 0);
-    const delivery = order.deliveryMethod?.price || 0;
-    return (subtotal + delivery).toFixed(2);
+    // Ensure all values are numbers and handle edge cases
+    const subtotal = order.items.reduce((total, item) => {
+      const price = parseFloat(item.price) || 0;
+      const quantity = parseInt(item.quantity) || 0;
+      return total + (price * quantity);
+    }, 0);
+    
+    const delivery = parseFloat(order.deliveryMethod?.price) || 0;
+    const total = subtotal + delivery;
+    
+    // Ensure total is a valid number before calling toFixed
+    return isNaN(total) ? '0.00' : total.toFixed(2);
   };
 
   return (
@@ -128,31 +254,55 @@ const Order = () => {
               
               <div className="mb-6 sm:mb-8">
                 <h2 className="text-lg sm:text-xl font-semibold text-[#224229] mb-3 sm:mb-4">Delivery Method</h2>
-                <div className="space-y-2 sm:space-y-3">
-                  {deliveryMethods.map(method => (
-                    <div 
-                      key={method.id}
-                      onClick={() => handleDeliveryChange(method)}
-                      className={`p-3 sm:p-4 border rounded-lg cursor-pointer ${
-                        order.deliveryMethod?.id === method.id 
-                          ? 'border-[#224229] bg-[#f0f7f1]' 
-                          : 'border-gray-300 hover:border-[#224229]'
-                      }`}
-                    >
-                      <div className="flex justify-between">
-                        <span className="font-medium text-sm sm:text-base">{method.name}</span>
-                        <span className="font-bold text-sm sm:text-base" style={{ color: theme.colors.primary }}>
-                          {method.price > 0 ? `$${method.price}` : 'Free'}
-                        </span>
+                {loading ? (
+                  <div className="text-center py-4">
+                    <p className="text-gray-600">Loading delivery methods...</p>
+                  </div>
+                ) : deliveryMethods.length === 0 ? (
+                  <div className="text-center py-4">
+                    <p className="text-red-600">No delivery methods available</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 sm:space-y-3">
+                    {deliveryMethods.map(method => (
+                      <div 
+                        key={method.id}
+                        onClick={() => handleDeliveryChange(method)}
+                        className={`p-3 sm:p-4 border rounded-lg cursor-pointer transition-colors ${
+                          order.deliveryMethod?.id === method.id 
+                            ? 'border-[#224229] bg-[#f0f7f1]' 
+                            : 'border-gray-300 hover:border-[#224229]'
+                        }`}
+                      >
+                        <div className="flex justify-between">
+                          <span className="font-medium text-sm sm:text-base">{method.name}</span>
+                          <span className="font-bold text-sm sm:text-base" style={{ color: theme.colors.primary }}>
+                            {method.price && parseFloat(method.price) > 0 ? `$${parseFloat(method.price).toFixed(2)}` : 'Free'}
+                          </span>
+                        </div>
+                        <p className="text-xs sm:text-sm text-gray-600 mt-1">
+                          {method.time || 'Delivery time not specified'}
+                        </p>
+                        {method.description && (
+                          <p className="text-xs text-gray-500 mt-1">{method.description}</p>
+                        )}
                       </div>
-                      <p className="text-xs sm:text-sm text-gray-600 mt-1">{method.time}</p>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="mb-6 sm:mb-8">
-                <h2 className="text-lg sm:text-xl font-semibold text-[#224229] mb-3 sm:mb-4">Your Information</h2>
+                <div className="flex justify-between items-center mb-3 sm:mb-4">
+                  <h2 className="text-lg sm:text-xl font-semibold text-[#224229]">Your Information</h2>
+                  <button
+                    type="button"
+                    onClick={() => setShowProfileSidebar(true)}
+                    className="text-sm text-[#224229] hover:text-[#4b6250] font-medium underline"
+                  >
+                    Edit Profile
+                  </button>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                   <div>
                     <label className="block text-xs sm:text-sm font-medium mb-1 sm:mb-2" style={{ color: theme.colors.primary }}>Full Name *</label>
@@ -203,9 +353,14 @@ const Order = () => {
               <div className="flex justify-end">
                 <button 
                   onClick={handleSubmitOrder}
-                  className="bg-[#224229] text-white px-6 py-2 sm:px-8 sm:py-3 rounded-lg font-bold hover:bg-[#4b6250] transition-colors text-sm sm:text-base"
+                  disabled={loading}
+                  className={`px-6 py-2 sm:px-8 sm:py-3 rounded-lg font-bold text-sm sm:text-base transition-colors ${
+                    loading 
+                      ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                      : 'bg-[#224229] text-white hover:bg-[#4b6250]'
+                  }`}
                 >
-                  Confirm Order
+                  {loading ? 'Processing...' : 'Confirm Order'}
                 </button>
               </div>
             </div>
@@ -237,8 +392,8 @@ const Order = () => {
                 </div>
                 
                 <div className="space-y-3 sm:space-y-4 mb-4 sm:mb-6">
-                  {order.items.map(item => (
-                    <div key={item.id} className="flex gap-3 sm:gap-4 pb-3 sm:pb-4 border-b border-[#e5e7eb]">
+                  {order.items.map((item, index) => (
+                    <div key={item.cart_id || item.id || index} className="flex gap-3 sm:gap-4 pb-3 sm:pb-4 border-b border-[#e5e7eb]">
                       <img 
                         src={item.image} 
                         alt={item.name} 
@@ -248,7 +403,9 @@ const Order = () => {
                         <h4 className="font-medium text-sm sm:text-base text-[#224229]">{item.name}</h4>
                         <p className="text-xs sm:text-sm text-gray-600">Size: {item.size}</p>
                         <p className="text-xs sm:text-sm text-gray-600">Qty: {item.quantity}</p>
-                        <p className="font-medium text-sm sm:text-base text-[#224229] mt-1">${(item.price * item.quantity).toFixed(2)}</p>
+                        <p className="font-medium text-sm sm:text-base text-[#224229] mt-1">
+                          ${((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 0)).toFixed(2)}
+                        </p>
                         <p className="text-xs text-gray-500 mt-1">Seller: {item.seller}</p>
                       </div>
                     </div>
@@ -259,14 +416,18 @@ const Order = () => {
                   <div className="flex justify-between">
                     <span className="text-xs sm:text-sm text-gray-600">Subtotal</span>
                     <span className="text-xs sm:text-sm">
-                      ${order.items.reduce((total, item) => total + (item.price * item.quantity), 0).toFixed(2)}
+                      ${order.items.reduce((total, item) => {
+                        const price = parseFloat(item.price) || 0;
+                        const quantity = parseInt(item.quantity) || 0;
+                        return total + (price * quantity);
+                      }, 0).toFixed(2)}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-xs sm:text-sm text-gray-600">Delivery</span>
                     <span className="text-xs sm:text-sm">
-                      {order.deliveryMethod?.price > 0 
-                        ? `$${order.deliveryMethod.price}` 
+                      {order.deliveryMethod?.price && parseFloat(order.deliveryMethod.price) > 0
+                        ? `$${parseFloat(order.deliveryMethod.price).toFixed(2)}` 
                         : 'Free'}
                     </span>
                   </div>
@@ -311,6 +472,13 @@ const Order = () => {
       </div>
       
       <Footer />
+      
+      {/* Profile Sidebar */}
+      <ProfileSidebar 
+        isOpen={showProfileSidebar}
+        onClose={() => setShowProfileSidebar(false)}
+        onUpdateInfo={handleProfileUpdate}
+      />
     </div>
   );
 };

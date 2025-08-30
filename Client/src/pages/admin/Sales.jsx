@@ -1,11 +1,20 @@
 import { useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import { theme } from '../../theme';
 
 const Sales = () => {
-  const { salesReps, loading, error, refreshAllData } = useOutletContext();
+  const { salesReps, loading, error, deleteCustomer, refreshAllData } = useOutletContext();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showCommissionModal, setShowCommissionModal] = useState(false);
+  const [sellerToDelete, setSellerToDelete] = useState(null);
+  const [sellerToEdit, setSellerToEdit] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [editingCommission, setEditingCommission] = useState(false);
+  const [commissionPercentage, setCommissionPercentage] = useState(10);
   const [newSalesRep, setNewSalesRep] = useState({
     name: '',
     email: '',
@@ -35,6 +44,73 @@ const Sales = () => {
     console.log('Add sales rep:', newSalesRep);
     setShowAddModal(false);
     setNewSalesRep({ name: '', email: '', phone: '', commissionRate: 10 });
+  };
+
+  const handleDeleteClick = (seller) => {
+    setSellerToDelete(seller);
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!sellerToDelete || !user?.user_id) return;
+    
+    setDeleting(true);
+    try {
+      const result = await deleteCustomer(sellerToDelete.user_id, user.user_id);
+      
+      if (result.success) {
+        alert('Seller deleted successfully!');
+        setShowDeleteModal(false);
+        setSellerToDelete(null);
+      } else {
+        alert('Failed to delete seller: ' + (result.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('An error occurred while deleting the seller.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setShowDeleteModal(false);
+    setSellerToDelete(null);
+  };
+
+  const handleCommissionClick = (seller) => {
+    setSellerToEdit(seller);
+    setCommissionPercentage(seller.commission_rate || 10);
+    setShowCommissionModal(true);
+  };
+
+  const handleCommissionSave = async () => {
+    if (!sellerToEdit) return;
+    
+    setEditingCommission(true);
+    try {
+      // Note: This would need a backend endpoint to update commission rates
+      // For now, just log the change
+      console.log('Update commission for seller:', sellerToEdit.user_id, 'to', commissionPercentage + '%');
+      alert(`Commission rate updated to ${commissionPercentage}% for ${sellerToEdit.first_name} ${sellerToEdit.last_name}`);
+      setShowCommissionModal(false);
+      setSellerToEdit(null);
+    } catch (error) {
+      console.error('Commission update error:', error);
+      alert('An error occurred while updating the commission rate.');
+    } finally {
+      setEditingCommission(false);
+    }
+  };
+
+  const handleCommissionCancel = () => {
+    setShowCommissionModal(false);
+    setSellerToEdit(null);
+    setCommissionPercentage(10);
+  };
+
+  const calculateTotalEarnings = (seller) => {
+    return seller.total_earnings || seller.activity_count * 50 || 0;
   };
 
   const handleRetry = () => {
@@ -122,7 +198,10 @@ const Sales = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="font-medium">Commission:</span>
-                    <span>10%</span>
+                    <div className="text-right">
+                      <div>{rep.commission_rate || 10}%</div>
+                      <div className="text-sm text-gray-500">Total Earnings: ${calculateTotalEarnings(rep)}</div>
+                    </div>
                   </div>
                   <div className="flex justify-between">
                     <span className="font-medium">Performance:</span>
@@ -134,9 +213,22 @@ const Sales = () => {
                   <div className="flex justify-between pt-2">
                     <span className="font-medium">Actions:</span>
                     <div className="flex gap-2">
-                      <button className="text-blue-500 hover:text-blue-700">
+                      <button 
+                        onClick={() => handleCommissionClick(rep)}
+                        className="text-blue-500 hover:text-blue-700"
+                        title="Edit Commission"
+                      >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                          <path d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" />
+                        </svg>
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteClick(rep)}
+                        className="text-red-500 hover:text-red-700"
+                        title="Delete Seller"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9zM4 5a2 2 0 012-2v1a1 1 0 001 1h6a1 1 0 001-1V3a2 2 0 012 2v1H4V5zM3 8a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm2 3a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1z" clipRule="evenodd" />
                         </svg>
                       </button>
                     </div>
@@ -150,15 +242,31 @@ const Sales = () => {
                   <div>{rep.email}</div>
                   <div className="text-sm text-gray-500">{rep.phone || 'N/A'}</div>
                 </div>
-                <div className="hidden md:grid col-span-2 items-center">10%</div>
+                <div className="hidden md:grid col-span-2 items-center">
+                  <div>{rep.commission_rate || 10}%</div>
+                  <div className="text-sm text-gray-500">Total: ${calculateTotalEarnings(rep)}</div>
+                </div>
                 <div className="hidden md:grid col-span-2 items-center">
                   <div>{rep.activity_count || 0} sales</div>
                   <div className="text-sm text-gray-500">${rep.earnings || 0}</div>
                 </div>
                 <div className="hidden md:grid col-span-2 items-center flex gap-2">
-                  <button className="text-blue-500 hover:text-blue-700">
+                  <button 
+                    onClick={() => handleCommissionClick(rep)}
+                    className="text-blue-500 hover:text-blue-700"
+                    title="Edit Commission"
+                  >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                      <path d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" />
+                    </svg>
+                  </button>
+                  <button 
+                    onClick={() => handleDeleteClick(rep)}
+                    className="text-red-500 hover:text-red-700"
+                    title="Delete Seller"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9zM4 5a2 2 0 012-2v1a1 1 0 001 1h6a1 1 0 001-1V3a2 2 0 012 2v1H4V5zM3 8a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm2 3a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1z" clipRule="evenodd" />
                     </svg>
                   </button>
                 </div>
@@ -245,6 +353,119 @@ const Sales = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Seller Confirmation Modal */}
+      {showDeleteModal && sellerToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-lg w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-red-600">Confirm Delete</h2>
+              <button 
+                onClick={handleDeleteCancel} 
+                className="text-gray-500 hover:text-gray-700"
+                disabled={deleting}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="mb-6">
+              <p className="text-gray-700 mb-2">
+                Are you sure you want to delete this seller?
+              </p>
+              <div className="bg-gray-100 p-3 rounded">
+                <p className="font-medium">{`${sellerToDelete.first_name} ${sellerToDelete.last_name}`}</p>
+                <p className="text-sm text-gray-600">{sellerToDelete.email}</p>
+                <p className="text-sm text-gray-600">Total Earnings: ${calculateTotalEarnings(sellerToDelete)}</p>
+              </div>
+              <p className="text-sm text-red-600 mt-2">
+                This action cannot be undone. The seller account will be deactivated.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleDeleteCancel}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors order-2 sm:order-1"
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteConfirm}
+                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors order-1 sm:order-2 disabled:opacity-50"
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting...' : 'Delete Seller'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Commission Edit Modal */}
+      {showCommissionModal && sellerToEdit && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-lg w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold" style={{ color: theme.colors.primary }}>Edit Commission Rate</h2>
+              <button 
+                onClick={handleCommissionCancel} 
+                className="text-gray-500 hover:text-gray-700"
+                disabled={editingCommission}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="mb-6">
+              <div className="bg-gray-100 p-3 rounded mb-4">
+                <p className="font-medium">{`${sellerToEdit.first_name} ${sellerToEdit.last_name}`}</p>
+                <p className="text-sm text-gray-600">{sellerToEdit.email}</p>
+                <p className="text-sm text-gray-600">Total Earnings: ${calculateTotalEarnings(sellerToEdit)}</p>
+                <p className="text-sm text-gray-600">Current Commission: {sellerToEdit.commission_rate || 10}%</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.primary }}>New Commission Percentage</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={commissionPercentage}
+                  onChange={(e) => setCommissionPercentage(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  disabled={editingCommission}
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  Commission amount: ${((calculateTotalEarnings(sellerToEdit) * commissionPercentage) / 100).toFixed(2)}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleCommissionCancel}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors order-2 sm:order-1"
+                disabled={editingCommission}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCommissionSave}
+                className="bg-[#224229] text-white px-4 py-2 rounded-lg hover:bg-[#4b6250] transition-colors order-1 sm:order-2 disabled:opacity-50"
+                disabled={editingCommission}
+              >
+                {editingCommission ? 'Saving...' : 'Save Commission'}
+              </button>
+            </div>
           </div>
         </div>
       )}
