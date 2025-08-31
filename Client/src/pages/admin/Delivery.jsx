@@ -14,10 +14,14 @@ const Delivery = () => {
   });
 
   const filteredAgents = Array.isArray(deliveryAgents)
-    ? deliveryAgents.filter(agent =>
-        agent.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        agent.email?.toLowerCase().includes(searchTerm.toLowerCase())
-      )
+    ? deliveryAgents.filter(agent => {
+        const fullName = `${agent.first_name || ''} ${agent.last_name || ''}`.toLowerCase();
+        return (
+          fullName.includes(searchTerm.toLowerCase()) ||
+          agent.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          agent.phone?.includes(searchTerm)
+        );
+      })
     : [];
 
   const handleInputChange = (e) => {
@@ -63,71 +67,63 @@ const Delivery = () => {
           <div className="col-span-3">Contact</div>
           <div className="col-span-2">Vehicle</div>
           <div className="col-span-2">Deliveries</div>
-          <div className="col-span-2">Actions</div>
+          <div className="col-span-2">Status</div>
         </div>
         {filteredAgents.length > 0 ? (
           filteredAgents.map(agent => (
-            <div key={agent.id} className="grid grid-cols-1 md:grid-cols-12 p-4 border-b gap-4 md:gap-0">
+            <div key={agent.user_id || agent.agent_id} className="grid grid-cols-1 md:grid-cols-12 p-4 border-b gap-4 md:gap-0">
               <div className="md:hidden space-y-2">
                 <div className="flex justify-between">
                   <span className="font-medium">Name:</span>
-                  <span>{agent.name}</span>
+                  <span>{`${agent.first_name || ''} ${agent.last_name || ''}`.trim() || 'N/A'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Contact:</span>
                   <div className="text-right">
-                    <div className="text-sm">{agent.email}</div>
-                    <div className="text-sm text-gray-500">{agent.phone}</div>
+                    <div className="text-sm">{agent.email || 'N/A'}</div>
+                    <div className="text-sm text-gray-500">{agent.phone || 'N/A'}</div>
                   </div>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Vehicle:</span>
-                  <span>{agent.vehicle || 'Bike'}</span>
+                  <span>{agent.vehicle_type || 'N/A'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Deliveries:</span>
                   <div className="text-right">
-                    <div>{agent.deliveries || 0}</div>
-                    <div className="text-sm text-gray-500">${agent.earnings || 0}</div>
+                    <div>{agent.activity_count || 0}</div>
+                    <div className="text-sm text-gray-500">Active: {agent.is_active ? 'Yes' : 'No'}</div>
                   </div>
                 </div>
                 <div className="flex justify-between pt-2">
-                  <span className="font-medium">Actions:</span>
+                  <span className="font-medium">Status:</span>
                   <div className="flex gap-2">
-                    <button className="text-blue-500 hover:text-blue-700">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                      </svg>
-                    </button>
-                    <button className="text-red-500 hover:text-red-700">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                    </button>
+                    <span className={`px-2 py-1 text-xs rounded-full ${
+                      agent.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      {agent.is_active ? 'Active' : 'Inactive'}
+                    </span>
                   </div>
                 </div>
               </div>
-              <div className="hidden md:grid col-span-3 font-medium items-center">{agent.name}</div>
-              <div className="hidden md:grid col-span-3 items-center">
-                <div>{agent.email}</div>
-                <div className="text-sm text-gray-500">{agent.phone}</div>
+              <div className="hidden md:grid col-span-3 font-medium items-center">
+                {`${agent.first_name || ''} ${agent.last_name || ''}`.trim() || 'N/A'}
               </div>
-              <div className="hidden md:grid col-span-2 items-center">{agent.vehicle || 'Bike'}</div>
+              <div className="hidden md:grid col-span-3 items-center">
+                <div>{agent.email || 'N/A'}</div>
+                <div className="text-sm text-gray-500">{agent.phone || 'N/A'}</div>
+              </div>
+              <div className="hidden md:grid col-span-2 items-center">{agent.vehicle_type || 'N/A'}</div>
               <div className="hidden md:grid col-span-2 items-center">
-                <div>{agent.deliveries || 0}</div>
-                <div className="text-sm text-gray-500">${agent.earnings || 0}</div>
+                <div>{agent.activity_count || 0}</div>
+                <div className="text-sm text-gray-500">Active: {agent.is_active ? 'Yes' : 'No'}</div>
               </div>
               <div className="hidden md:grid col-span-2 items-center flex gap-2">
-                <button className="text-blue-500 hover:text-blue-700">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                  </svg>
-                </button>
-                <button className="text-red-500 hover:text-red-700">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                </button>
+                <span className={`px-2 py-1 text-xs rounded-full ${
+                  agent.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                }`}>
+                  {agent.is_active ? 'Active' : 'Inactive'}
+                </span>
               </div>
             </div>
           ))

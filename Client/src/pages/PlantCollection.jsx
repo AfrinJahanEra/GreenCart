@@ -33,7 +33,7 @@ const PlantCollection = () => {
     price: plant.price,
     ratingStars: generateRatingStars(plant.average_rating),
     reviewCount: plant.review_count || 0,
-    image: plant.image_url || getFallbackImage(),
+    image: plant.primary_image || plant.image_url || plant.image || getFallbackImage(),
     categories: plant.categories || [category || '']
   }));
 

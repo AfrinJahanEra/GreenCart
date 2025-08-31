@@ -11,9 +11,14 @@ export const usePlantDetail = (plantId) => {
       try {
         setLoading(true);
         const response = await plantDetailAPI.getPlantDetails(plantId);
-        setPlant(response.data);
+        
+        if (response.data.success) {
+          setPlant(response.data.plant);
+        } else {
+          throw new Error(response.data.error || 'Failed to fetch plant details');
+        }
       } catch (err) {
-        setError(err.message || 'Failed to fetch plant details');
+        setError(err.response?.data?.error || err.message || 'Failed to fetch plant details');
       } finally {
         setLoading(false);
       }
@@ -36,10 +41,16 @@ export const usePlantReviews = (plantId) => {
     const fetchReviews = async () => {
       try {
         setLoading(true);
-        const response = await plantDetailAPI.getReviews(plantId);
-        setReviews(response.data.reviews || []);
+        // Since reviews are included in plant details, we'll fetch them from there
+        const response = await plantDetailAPI.getPlantDetails(plantId);
+        
+        if (response.data.success) {
+          setReviews(response.data.plant.reviews || []);
+        } else {
+          throw new Error(response.data.error || 'Failed to fetch reviews');
+        }
       } catch (err) {
-        setError(err.message || 'Failed to fetch reviews');
+        setError(err.response?.data?.error || err.message || 'Failed to fetch reviews');
       } finally {
         setLoading(false);
       }

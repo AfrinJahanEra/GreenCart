@@ -7,11 +7,29 @@ import { useCustomerOrders } from '../../hooks/useCustomerOrders';
 const PendingOrders = () => {
   const { user } = useAuth();
   const { orders, loading, error, confirmDelivery } = useCustomerOrders(user?.user_id);
+  
+  // Add debug logging
+  console.log('PendingOrders - User:', user);
+  console.log('PendingOrders - Orders:', orders);
+  console.log('PendingOrders - Loading:', loading);
+  console.log('PendingOrders - Error:', error);
+  
+  // Add safety check for orders.pendingConfirmation
+  const pendingOrders = orders?.pendingConfirmation || [];
 
   const handleConfirmDelivery = async (orderId) => {
-    const result = await confirmDelivery(orderId);
-    if (result.success) {
-      // Success message or refresh
+    try {
+      const result = await confirmDelivery(orderId);
+      if (result.success) {
+        alert(result.message);
+        // Refresh the orders after confirmation
+        await fetchPendingConfirmationOrders();
+      } else {
+        alert(`Error: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error confirming delivery:', error);
+      alert('Failed to confirm delivery. Please try again.');
     }
   };
 
@@ -45,10 +63,10 @@ const PendingOrders = () => {
   return (
     <div className="max-w-7xl mx-auto">
       <h1 className="text-2xl font-bold mb-6" style={{ color: theme.colors.primary }}>
-        Pending Confirmation ({orders.pendingConfirmation.length})
+        Pending Confirmation ({pendingOrders.length})
       </h1>
       
-      {orders.pendingConfirmation.length === 0 ? (
+      {pendingOrders.length === 0 ? (
         <div className="text-center py-10">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M5 13l4 4L19 7" />
@@ -58,7 +76,7 @@ const PendingOrders = () => {
         </div>
       ) : (
         <div className="space-y-6">
-          {orders.pendingConfirmation.map(order => (
+          {pendingOrders.map(order => (
             <div key={order.order_id} className="border rounded-lg overflow-hidden">
               <div className="bg-orange-50 p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-orange-200 gap-2">
                 <div>

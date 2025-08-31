@@ -8,7 +8,12 @@ import { useAuth } from '../../contexts/AuthContext';
 const AddPlant = () => {
   const { refreshAllData } = useOutletContext();
   const { user } = useAuth();
-  const { addPlant, uploadImages, dashboardData, loading } = useSellerDashboard(user?.user_id);
+  const { addPlant, uploadImages, dashboardData, loading, error } = useSellerDashboard(user?.user_id);
+  
+  // Debug logging
+  console.log('AddPlant - dashboardData:', dashboardData);
+  console.log('AddPlant - loading:', loading);
+  console.log('AddPlant - error:', error);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -48,15 +53,29 @@ const AddPlant = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    console.log('AddPlant - Form submission started');
+    console.log('AddPlant - Form data:', formData);
+    console.log('AddPlant - Uploaded images:', uploadedImages);
+    
+    if (!dashboardData.categories || dashboardData.categories.length === 0) {
+      alert('No categories available. Please try refreshing the page or contact support.');
+      return;
+    }
+    
     const plantData = {
       ...formData,
       seller_id: user.user_id,
       base_price: parseFloat(formData.base_price),
       stock_quantity: parseInt(formData.stock_quantity),
-      images: uploadedImages.map(img => img.url).join(',')
+      images: uploadedImages.map(img => img.url).join(','),
+      sizes: formData.sizes || 'Small:-5.00,Medium:0.00,Large:10.00' // Default sizes if empty
     };
+    
+    console.log('AddPlant - Plant data to send:', plantData);
 
     const result = await addPlant(plantData);
+    
+    console.log('AddPlant - Result:', result);
     
     if (result.success) {
       alert('Plant added successfully!');
@@ -131,19 +150,45 @@ const AddPlant = () => {
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>
-                Category IDs (comma-separated)
+              <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.primary }}>
+                Category *
               </label>
-              <input
-                type="text"
-                name="category_ids"
-                value={formData.category_ids}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder="1,2,3"
-              />
+              {loading.categories ? (
+                <div className="text-sm text-gray-500">Loading categories...</div>
+              ) : dashboardData.categories && dashboardData.categories.length > 0 ? (
+                <select
+                  value={formData.category_ids}
+                  onChange={(e) => {
+                    setFormData(prev => ({ ...prev, category_ids: e.target.value }));
+                  }}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  required
+                >
+                  <option value="">Select a category</option>
+                  {dashboardData.categories.map((category, index) => {
+                    // Handle Oracle uppercase column names
+                    const categoryId = category.CATEGORY_ID || category.category_id || category.id || category.ID;
+                    const categoryName = category.NAME || category.name || category.title || 'Unknown Category';
+                    
+                    if (!categoryId) {
+                      console.warn('Category missing ID:', category);
+                      return null;
+                    }
+                    
+                    return (
+                      <option key={categoryId || index} value={categoryId}>
+                        {categoryName}
+                      </option>
+                    );
+                  }).filter(Boolean)}
+                </select>
+              ) : (
+                <div className="text-sm text-red-500">
+                  {error.categories ? `Error loading categories: ${error.categories}` : 'No categories available'}
+                </div>
+              )}
               <p className="text-xs text-gray-500 mt-1">
-                Available categories: {dashboardData.categories.map(c => c.category_id).join(', ')}
+                Select a category for your plant
               </p>
             </div>
           </div>

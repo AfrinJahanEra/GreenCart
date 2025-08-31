@@ -15,7 +15,7 @@ const Hero = () => {
           onError={(e) => {
             console.error('Failed to load Hero image, using fallback');
             e.target.onerror = null;
-            e.target.src = 'https://images.pexels.com/photos/1301856/pexels-photo-1301856.jpeg?auto=compress&cs=tinysrgb&w=1500';
+            e.target.src = 'https://plus.unsplash.com/premium_photo-1661779742306-ff4959e610fb?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDcyfHx8ZW58MHx8fHx8';
           }}
         />
         <div className="absolute inset-0" style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}></div>

@@ -379,6 +379,7 @@ BEGIN
 END;
 /
 
+
 ---- User Interaction Tables
 --CREATE TABLE favorites (
 --    favorite_id NUMBER PRIMARY KEY,
@@ -442,20 +443,21 @@ BEGIN
 END;
 /
 
+drop table delivery_confirmations;
 
+-- Delivery confirmations table
+-- Delivery confirmations table
 CREATE TABLE delivery_confirmations (
     confirmation_id NUMBER PRIMARY KEY,
     order_id NUMBER NOT NULL,
     user_id NUMBER NOT NULL, -- customer ID
     agent_id NUMBER NOT NULL, -- delivery agent ID
-    customer_confirmed NUMBER(1) DEFAULT 0,
-    agent_confirmed NUMBER(1) DEFAULT 0,
+    customer_confirmed NUMBER(1) DEFAULT 0 CHECK (customer_confirmed IN (0, 1)),
+    agent_confirmed NUMBER(1) DEFAULT 0 CHECK (agent_confirmed IN (0, 1)),
     confirmed_date TIMESTAMP,
     CONSTRAINT fk_delivery_conf_order FOREIGN KEY (order_id) REFERENCES orders(order_id),
-    CONSTRAINT fk_delivery_conf_user FOREIGN KEY (user_id) REFERENCES users(user_id),
-    CONSTRAINT fk_delivery_conf_agent FOREIGN KEY (agent_id) REFERENCES delivery_agents(agent_id),
     CONSTRAINT uk_delivery_conf_order UNIQUE (order_id)
-) TABLESPACE order_data;
+);
 
 CREATE SEQUENCE seq_delivery_confirmations START WITH 1 INCREMENT BY 1;
 
@@ -693,10 +695,15 @@ END;
 CREATE OR REPLACE PROCEDURE get_top_4_categories (p_cursor OUT SYS_REFCURSOR) AS
 BEGIN
   OPEN p_cursor FOR
-  SELECT pc.category_id, pc.name, pc.slug, COUNT(pcm.plant_id) AS plant_count
+  SELECT 
+      pc.category_id, 
+      pc.name, 
+      pc.slug, 
+      pc.image_url,
+      COUNT(pcm.plant_id) AS plant_count
   FROM plant_categories pc
   LEFT JOIN plant_category_mapping pcm ON pc.category_id = pcm.category_id
-  GROUP BY pc.category_id, pc.name, pc.slug
+  GROUP BY pc.category_id, pc.name, pc.slug, pc.image_url
   ORDER BY plant_count DESC
   FETCH FIRST 4 ROWS ONLY;
 END;
@@ -836,6 +843,29 @@ END;
 /
 
 
+CREATE OR REPLACE FUNCTION get_top_4_plants RETURN SYS_REFCURSOR IS
+  v_cursor SYS_REFCURSOR;
+BEGIN
+  OPEN v_cursor FOR
+  SELECT 
+      p.plant_id, 
+      p.name, 
+      p.base_price,
+      pi.image_url AS primary_image,
+      NVL(AVG(r.rating), 0) AS avg_rating, 
+      COUNT(r.review_id) AS review_count
+  FROM plants p
+  LEFT JOIN plant_images pi ON p.plant_id = pi.plant_id AND pi.is_primary = 1
+  LEFT JOIN reviews r ON p.plant_id = r.plant_id
+  WHERE p.is_active = 1
+  GROUP BY p.plant_id, p.name, p.base_price, pi.image_url
+  ORDER BY avg_rating DESC, review_count DESC
+  FETCH FIRST 4 ROWS ONLY;
+  RETURN v_cursor;
+END;
+/
+
+
 CREATE OR REPLACE PROCEDURE get_all_categories (
     p_cursor OUT SYS_REFCURSOR
 ) AS
@@ -960,6 +990,8 @@ EXCEPTION
         RAISE;
 END;
 /
+
+
 
 -- Create a separate procedure for reviews
 CREATE OR REPLACE PROCEDURE get_plant_reviews (
@@ -1657,97 +1689,6 @@ BEGIN
 END;
 /
 
--- 4. Procedure for customer to confirm delivery
-CREATE OR REPLACE PROCEDURE customer_confirm_delivery (
-    p_order_id IN NUMBER,
-    p_user_id IN NUMBER,
-    p_success OUT NUMBER,
-    p_message OUT VARCHAR2
-) AS
-    v_order_exists NUMBER;
-    v_customer_id NUMBER;
-    v_status_name VARCHAR2(50);
-    v_agent_confirmed NUMBER;
-BEGIN
-    -- Check if order exists and belongs to user
-    SELECT COUNT(*), user_id
-    INTO v_order_exists, v_customer_id
-    FROM orders
-    WHERE order_id = p_order_id;
-
-    IF v_order_exists = 0 THEN
-        p_success := 0;
-        p_message := 'Order not found';
-        RETURN;
-    END IF;
-
-    IF v_customer_id != p_user_id THEN
-        p_success := 0;
-        p_message := 'Not authorized to confirm this delivery';
-        RETURN;
-    END IF;
-
-    -- Check order status
-    SELECT os.status_name
-    INTO v_status_name
-    FROM orders o
-    JOIN order_statuses os ON o.status_id = os.status_id
-    WHERE o.order_id = p_order_id;
-
-    IF v_status_name != 'Out for Delivery' THEN
-        p_success := 0;
-        p_message := 'Order is not out for delivery';
-        RETURN;
-    END IF;
-
-    -- Check if agent has confirmed
-    SELECT NVL(agent_confirmed, 0)
-    INTO v_agent_confirmed
-    FROM delivery_confirmations
-    WHERE order_id = p_order_id;
-
-    IF v_agent_confirmed = 0 THEN
-        p_success := 0;
-        p_message := 'Delivery agent has not confirmed delivery yet';
-        RETURN;
-    END IF;
-
-    -- Update customer confirmation
-    MERGE INTO delivery_confirmations dc
-    USING (SELECT p_order_id AS order_id, p_user_id AS user_id FROM dual) src
-    ON (dc.order_id = src.order_id)
-    WHEN MATCHED THEN
-        UPDATE SET 
-            customer_confirmed = 1,
-            confirmed_date = CASE WHEN agent_confirmed = 1 THEN SYSTIMESTAMP ELSE confirmed_date END
-    WHEN NOT MATCHED THEN
-        INSERT (order_id, user_id, agent_id, customer_confirmed)
-        VALUES (src.order_id, src.user_id, 
-               (SELECT agent_id FROM order_assignments WHERE order_id = p_order_id), 1);
-
-    -- If both confirmed, update order status to Delivered
-    UPDATE orders
-    SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
-        actual_delivery_date = SYSTIMESTAMP
-    WHERE order_id = p_order_id
-    AND EXISTS (
-        SELECT 1 FROM delivery_confirmations 
-        WHERE order_id = p_order_id 
-        AND customer_confirmed = 1 
-        AND agent_confirmed = 1
-    );
-
-    COMMIT;
-    p_success := 1;
-    p_message := 'Delivery confirmed successfully';
-
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        p_success := 0;
-        p_message := 'Error confirming delivery: ' || SQLERRM;
-END;
-/
 
 drop procedure add_review;
 
@@ -2103,7 +2044,7 @@ BEGIN
         CASE 
             WHEN p_role_name = 'customer' THEN 
                 (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.user_id)
-            WHEN p_role_name = 'delivery' THEN 
+            WHEN p_role_name = 'delivery_agent' THEN 
                 (SELECT COUNT(*) FROM order_assignments oa 
                  JOIN delivery_agents da ON oa.agent_id = da.agent_id 
                  WHERE da.user_id = u.user_id)
@@ -2155,7 +2096,7 @@ BEGIN
             LEFT JOIN order_assignments oa ON da.agent_id = oa.agent_id
             LEFT JOIN orders o ON oa.order_id = o.order_id
             LEFT JOIN order_statuses os ON o.status_id = os.status_id
-            WHERE r.role_name = 'delivery' AND u.is_active = 1
+            WHERE r.role_name = 'delivery_agent' AND u.is_active = 1
             AND os.status_name = 'Delivered'
             GROUP BY da.agent_id
         );
@@ -2746,25 +2687,48 @@ END;
 -- Seller procedures
 
 -- 1. Get Seller Statistics (Total Plants, Total Sales, Total Earnings)
-CREATE OR REPLACE PROCEDURE get_seller_stats (
+
+CREATE OR REPLACE PROCEDURE get_seller_plants(
     p_seller_id IN NUMBER,
     p_cursor OUT SYS_REFCURSOR
 ) AS
 BEGIN
     OPEN p_cursor FOR
     SELECT 
-        (SELECT COUNT(*) FROM plants WHERE seller_id = p_seller_id AND is_active = 1) AS total_plants,
-        (SELECT NVL(SUM(oi.quantity), 0) FROM order_items oi 
-         JOIN plants p ON oi.plant_id = p.plant_id 
+        p.plant_id,
+        p.name AS plant_name,
+        -- Handle CLOB by converting to VARCHAR2 with substr
+        DBMS_LOB.SUBSTR(p.description, 4000, 1) AS description,
+        p.base_price,
+        p.stock_quantity,
+        p.created_at,
+        p.updated_at,
+        p.is_active,
+        -- Get primary image
+        (SELECT image_url FROM plant_images WHERE plant_id = p.plant_id AND is_primary = 1 AND ROWNUM = 1) AS primary_image,
+        -- Get all categories as comma-separated list
+        LISTAGG(pc.name, ', ') WITHIN GROUP (ORDER BY pc.name) AS categories,
+        -- Get all sizes
+        (SELECT LISTAGG(size_name || ' (+₹' || price_adjustment || ')', ', ') 
+         FROM plant_sizes WHERE plant_id = p.plant_id) AS available_sizes,
+        -- Get review statistics
+        NVL(AVG(r.rating), 0) AS avg_rating,
+        COUNT(r.review_id) AS total_reviews,
+        -- Get total sales
+        (SELECT NVL(SUM(oi.quantity), 0) 
+         FROM order_items oi 
          JOIN orders o ON oi.order_id = o.order_id 
-         WHERE p.seller_id = p_seller_id 
-         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) AS total_sold,
-        (SELECT NVL(SUM(oi.quantity * oi.unit_price * 0.9), 0) FROM order_items oi 
-         JOIN plants p ON oi.plant_id = p.plant_id 
-         JOIN orders o ON oi.order_id = o.order_id 
-         WHERE p.seller_id = p_seller_id 
-         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) AS total_earnings
-    FROM dual;
+         WHERE oi.plant_id = p.plant_id 
+         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) AS total_sold
+    FROM plants p
+    LEFT JOIN plant_category_mapping pcm ON p.plant_id = pcm.plant_id
+    LEFT JOIN plant_categories pc ON pcm.category_id = pc.category_id
+    LEFT JOIN reviews r ON p.plant_id = r.plant_id
+    WHERE p.seller_id = p_seller_id
+    GROUP BY 
+        p.plant_id, p.name, DBMS_LOB.SUBSTR(p.description, 4000, 1), p.base_price, p.stock_quantity,
+        p.created_at, p.updated_at, p.is_active
+    ORDER BY p.created_at DESC;
 END;
 /
 
@@ -2837,28 +2801,60 @@ END;
 /
 
 -- 5. Get Sales Records
-CREATE OR REPLACE PROCEDURE get_seller_sales (
+-- Comprehensive seller dashboard procedure
+CREATE OR REPLACE PROCEDURE get_seller_dashboard(
     p_seller_id IN NUMBER,
-    p_cursor OUT SYS_REFCURSOR
+    p_plants_cursor OUT SYS_REFCURSOR,
+    p_stats_cursor OUT SYS_REFCURSOR,
+    p_categories_cursor OUT SYS_REFCURSOR
 ) AS
 BEGIN
-    OPEN p_cursor FOR
+    -- Get seller's plants
+    OPEN p_plants_cursor FOR
     SELECT 
-        o.order_id,
-        o.order_number,
-        TO_CHAR(o.order_date, 'YYYY-MM-DD') AS order_date,
+        p.plant_id,
         p.name AS plant_name,
-        oi.quantity,
-        oi.unit_price,
-        (oi.quantity * oi.unit_price) AS total_amount,
-        (oi.quantity * oi.unit_price * 0.9) AS seller_earnings,
-        os.status_name AS order_status
-    FROM order_items oi
-    JOIN plants p ON oi.plant_id = p.plant_id
-    JOIN orders o ON oi.order_id = o.order_id
-    JOIN order_statuses os ON o.status_id = os.status_id
+        p.base_price,
+        p.stock_quantity,
+        (SELECT image_url FROM plant_images WHERE plant_id = p.plant_id AND is_primary = 1 AND ROWNUM = 1) AS image,
+        LISTAGG(pc.name, ', ') WITHIN GROUP (ORDER BY pc.name) AS categories,
+        NVL(AVG(r.rating), 0) AS avg_rating,
+        (SELECT COUNT(*) FROM reviews WHERE plant_id = p.plant_id) AS review_count,
+        (SELECT NVL(SUM(oi.quantity), 0) 
+         FROM order_items oi 
+         JOIN orders o ON oi.order_id = o.order_id 
+         WHERE oi.plant_id = p.plant_id 
+         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) AS total_sold
+    FROM plants p
+    LEFT JOIN plant_category_mapping pcm ON p.plant_id = pcm.plant_id
+    LEFT JOIN plant_categories pc ON pcm.category_id = pc.category_id
+    LEFT JOIN reviews r ON p.plant_id = r.plant_id
     WHERE p.seller_id = p_seller_id
-    ORDER BY o.order_date DESC;
+    GROUP BY p.plant_id, p.name, p.base_price, p.stock_quantity
+    ORDER BY p.created_at DESC;
+
+    -- Get seller statistics
+    OPEN p_stats_cursor FOR
+    SELECT 
+        (SELECT COUNT(*) FROM plants WHERE seller_id = p_seller_id AND is_active = 1) AS total_plants,
+        (SELECT NVL(SUM(oi.quantity), 0) FROM order_items oi 
+         JOIN plants p ON oi.plant_id = p.plant_id 
+         JOIN orders o ON oi.order_id = o.order_id 
+         WHERE p.seller_id = p_seller_id 
+         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) AS total_sales,
+        (SELECT NVL(SUM(oi.quantity * oi.unit_price * 0.9), 0) FROM order_items oi 
+         JOIN plants p ON oi.plant_id = p.plant_id 
+         JOIN orders o ON oi.order_id = o.order_id 
+         WHERE p.seller_id = p_seller_id 
+         AND o.status_id IN (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')) AS total_earnings,
+        (SELECT COUNT(*) FROM plants WHERE seller_id = p_seller_id AND stock_quantity < 10) AS low_stock_count
+    FROM dual;
+
+    -- Get all categories for dropdown
+    OPEN p_categories_cursor FOR
+    SELECT category_id, name, description
+    FROM plant_categories
+    ORDER BY name;
 END;
 /
 
@@ -3105,7 +3101,7 @@ BEGIN
 END;
 /
 
--- Function to get all plant categories
+-- 9. Function to get all plant categories
 CREATE OR REPLACE FUNCTION get_plant_categories
 RETURN SYS_REFCURSOR
 AS
@@ -3123,36 +3119,50 @@ END;
 
 -- delivery man page
 
--- Procedure to get delivery agent dashboard information
-CREATE OR REPLACE PROCEDURE get_delivery_agent_dashboard (
+-- 1. Procedure to get delivery agent's assigned orders
+CREATE OR REPLACE PROCEDURE get_delivery_agent_orders(
     p_agent_id IN NUMBER,
-    p_all_assignments OUT SYS_REFCURSOR,
-    p_pending_assignments OUT SYS_REFCURSOR,
-    p_completed_assignments OUT SYS_REFCURSOR,
-    p_stats OUT SYS_REFCURSOR,
-    p_history OUT SYS_REFCURSOR
+    p_status IN VARCHAR2 DEFAULT NULL,
+    p_cursor OUT SYS_REFCURSOR
 ) AS
 BEGIN
-    -- 1. All assigned deliveries (pending or completed)
-    OPEN p_all_assignments FOR
+    OPEN p_cursor FOR
     SELECT 
         o.order_id,
         o.order_number,
         o.order_date,
         os.status_name AS order_status,
+        u.user_id AS customer_id,
         u.first_name || ' ' || u.last_name AS customer_name,
         u.phone AS customer_phone,
+        u.email AS customer_email,
         o.delivery_address,
-        o.total_amount,
-        o.estimated_delivery_date,
-        oa.assigned_at,
-        oa.completed_at,
-        oa.notes,
+        o.delivery_notes,
         dm.name AS delivery_method,
         dm.base_cost AS delivery_cost,
+        dm.estimated_days,
+        o.total_amount,
+        o.tracking_number,
+        o.estimated_delivery_date,
+        o.actual_delivery_date,
+        oa.assigned_at,
+        oa.completed_at,
+        oa.notes AS assignment_notes,
         dc.customer_confirmed,
         dc.agent_confirmed,
-        dc.confirmed_date
+        dc.confirmed_date,
+        -- Order items summary
+        (SELECT LISTAGG(p.name || ' (x' || oi.quantity || ')', ', ') 
+         WITHIN GROUP (ORDER BY oi.order_item_id)
+         FROM order_items oi 
+         JOIN plants p ON oi.plant_id = p.plant_id
+         WHERE oi.order_id = o.order_id) AS items_summary,
+        -- Primary image for display
+        (SELECT pi.image_url 
+         FROM order_items oi 
+         JOIN plants p ON oi.plant_id = p.plant_id
+         LEFT JOIN plant_images pi ON p.plant_id = pi.plant_id AND pi.is_primary = 1
+         WHERE oi.order_id = o.order_id AND ROWNUM = 1) AS primary_image
     FROM orders o
     JOIN order_assignments oa ON o.order_id = oa.order_id
     JOIN order_statuses os ON o.status_id = os.status_id
@@ -3160,10 +3170,25 @@ BEGIN
     JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
     LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
     WHERE oa.agent_id = p_agent_id
-    ORDER BY o.order_date DESC;
+    AND (p_status IS NULL OR os.status_name = p_status)
+    ORDER BY 
+        CASE 
+            WHEN os.status_name = 'Out for Delivery' THEN 1
+            WHEN os.status_name = 'Shipped' THEN 2
+            WHEN os.status_name = 'Processing' THEN 3
+            ELSE 4
+        END,
+        o.order_date DESC;
+END;
+/
 
-    -- 2. Pending deliveries
-    OPEN p_pending_assignments FOR
+-- 2. Procedure to get delivery agent's pending orders
+CREATE OR REPLACE PROCEDURE get_delivery_agent_pending_orders(
+    p_agent_id IN NUMBER,
+    p_cursor OUT SYS_REFCURSOR
+) AS
+BEGIN
+    OPEN p_cursor FOR
     SELECT 
         o.order_id,
         o.order_number,
@@ -3172,30 +3197,41 @@ BEGIN
         u.first_name || ' ' || u.last_name AS customer_name,
         u.phone AS customer_phone,
         o.delivery_address,
+        o.delivery_notes,
+        dm.name AS delivery_method,
         o.total_amount,
         o.estimated_delivery_date,
         oa.assigned_at,
-        dm.name AS delivery_method,
-        LISTAGG(pi.name || ' (Qty: ' || oi.quantity || ')', ', ') 
-            WITHIN GROUP (ORDER BY oi.order_item_id) AS order_items
+        -- Order items details
+        (SELECT LISTAGG(p.name || ' (Qty: ' || oi.quantity || ')', ', ') 
+         WITHIN GROUP (ORDER BY oi.order_item_id)
+         FROM order_items oi 
+         JOIN plants p ON oi.plant_id = p.plant_id
+         WHERE oi.order_id = o.order_id) AS order_items,
+        -- Customer delivery instructions if any
+        (SELECT LISTAGG(feature_text, '; ') 
+         FROM plant_features pf 
+         JOIN order_items oi ON pf.plant_id = oi.plant_id 
+         WHERE oi.order_id = o.order_id AND ROWNUM = 1) AS delivery_instructions
     FROM orders o
     JOIN order_assignments oa ON o.order_id = oa.order_id
     JOIN order_statuses os ON o.status_id = os.status_id
     JOIN users u ON o.user_id = u.user_id
     JOIN delivery_methods dm ON o.delivery_method_id = dm.method_id
-    JOIN order_items oi ON o.order_id = oi.order_id
-    JOIN plants pi ON oi.plant_id = pi.plant_id
     WHERE oa.agent_id = p_agent_id
     AND os.status_name IN ('Processing', 'Shipped', 'Out for Delivery')
     AND oa.completed_at IS NULL
-    GROUP BY 
-        o.order_id, o.order_number, o.order_date, os.status_name,
-        u.first_name, u.last_name, u.phone, o.delivery_address,
-        o.total_amount, o.estimated_delivery_date, oa.assigned_at, dm.name
-    ORDER BY o.order_date DESC;
+    ORDER BY o.estimated_delivery_date ASC, o.order_date DESC;
+END;
+/
 
-    -- 3. Completed deliveries
-    OPEN p_completed_assignments FOR
+-- 3. Procedure to get delivery agent's completed orders
+CREATE OR REPLACE PROCEDURE get_delivery_agent_completed_orders(
+    p_agent_id IN NUMBER,
+    p_cursor OUT SYS_REFCURSOR
+) AS
+BEGIN
+    OPEN p_cursor FOR
     SELECT 
         o.order_id,
         o.order_number,
@@ -3204,14 +3240,29 @@ BEGIN
         u.first_name || ' ' || u.last_name AS customer_name,
         u.phone AS customer_phone,
         o.delivery_address,
+        dm.name AS delivery_method,
         o.total_amount,
         o.actual_delivery_date,
         oa.assigned_at,
         oa.completed_at,
-        dm.name AS delivery_method,
+        oa.notes AS delivery_notes,
         dc.customer_confirmed,
         dc.agent_confirmed,
-        dc.confirmed_date
+        dc.confirmed_date,
+        -- Fixed: Use EXTRACT to calculate hours instead of direct arithmetic
+        ROUND(EXTRACT(DAY FROM (NVL(oa.completed_at, o.actual_delivery_date) - oa.assigned_at)) * 24 +
+              EXTRACT(HOUR FROM (NVL(oa.completed_at, o.actual_delivery_date) - oa.assigned_at)) +
+              EXTRACT(MINUTE FROM (NVL(oa.completed_at, o.actual_delivery_date) - oa.assigned_at)) / 60, 2) AS hours_to_complete,
+        CASE 
+            WHEN o.actual_delivery_date <= o.estimated_delivery_date THEN 'On Time'
+            ELSE 'Delayed'
+        END AS delivery_performance,
+        -- Order items summary
+        (SELECT LISTAGG(p.name || ' (x' || oi.quantity || ')', ', ') 
+         WITHIN GROUP (ORDER BY oi.order_item_id)
+         FROM order_items oi 
+         JOIN plants p ON oi.plant_id = p.plant_id
+         WHERE oi.order_id = o.order_id) AS items_summary
     FROM orders o
     JOIN order_assignments oa ON o.order_id = oa.order_id
     JOIN order_statuses os ON o.status_id = os.status_id
@@ -3220,59 +3271,309 @@ BEGIN
     LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
     WHERE oa.agent_id = p_agent_id
     AND os.status_name = 'Delivered'
-    AND oa.completed_at IS NOT NULL
     ORDER BY o.actual_delivery_date DESC;
+END;
+/
 
-    -- 4. Delivery statistics
-    OPEN p_stats FOR
-    WITH agent_stats AS (
-        SELECT 
-            COUNT(*) AS total_deliveries,
-            SUM(CASE WHEN os.status_name = 'Delivered' THEN 1 ELSE 0 END) AS completed_deliveries,
-            SUM(CASE WHEN os.status_name IN ('Processing', 'Shipped', 'Out for Delivery') THEN 1 ELSE 0 END) AS pending_deliveries,
-            SUM(CASE WHEN os.status_name = 'Delivered' THEN o.total_amount * 0.05 ELSE 0 END) AS total_earnings,
-            AVG(CASE WHEN os.status_name = 'Delivered' THEN o.total_amount * 0.05 ELSE NULL END) AS avg_earnings_per_delivery
-        FROM orders o
-        JOIN order_assignments oa ON o.order_id = oa.order_id
-        JOIN order_statuses os ON o.status_id = os.status_id
-        WHERE oa.agent_id = p_agent_id
-    )
-    SELECT 
-        total_deliveries,
-        completed_deliveries,
-        pending_deliveries,
-        total_earnings,
-        avg_earnings_per_delivery,
-        ROUND((completed_deliveries / NULLIF(total_deliveries, 0)) * 100, 2) AS completion_rate
-    FROM agent_stats;
 
-    -- 5. Delivery history (last 30 days)
-    OPEN p_history FOR
-    SELECT 
-        o.order_id,
-        o.order_number,
-        o.order_date,
-        os.status_name AS order_status,
-        u.first_name || ' ' || u.last_name AS customer_name,
-        o.delivery_address,
-        o.total_amount,
-        o.actual_delivery_date,
-        oa.completed_at,
-        dc.customer_confirmed,
-        dc.agent_confirmed,
-        dc.confirmed_date,
-        ROUND(o.total_amount * 0.05, 2) AS delivery_fee
+select * from orders;
+
+-- 2. Fixed Procedure to get delivery agent statistics
+CREATE OR REPLACE PROCEDURE get_delivery_agent_stats(
+    p_agent_id IN NUMBER,
+    p_total_assignments OUT NUMBER,
+    p_pending_assignments OUT NUMBER,
+    p_completed_assignments OUT NUMBER,
+    p_total_earnings OUT NUMBER,
+    p_avg_delivery_time OUT NUMBER
+) AS
+BEGIN
+    -- Total assignments
+    SELECT COUNT(*) INTO p_total_assignments
+    FROM order_assignments
+    WHERE agent_id = p_agent_id;
+
+    -- Pending assignments
+    SELECT COUNT(*) INTO p_pending_assignments
+    FROM order_assignments oa
+    JOIN orders o ON oa.order_id = o.order_id
+    JOIN order_statuses os ON o.status_id = os.status_id
+    WHERE oa.agent_id = p_agent_id
+    AND os.status_name IN ('Processing', 'Shipped', 'Out for Delivery')
+    AND oa.completed_at IS NULL;
+
+    -- Completed assignments
+    SELECT COUNT(*) INTO p_completed_assignments
+    FROM order_assignments oa
+    JOIN orders o ON oa.order_id = o.order_id
+    JOIN order_statuses os ON o.status_id = os.status_id
+    WHERE oa.agent_id = p_agent_id
+    AND os.status_name = 'Delivered';
+
+    -- Total earnings (5% of order total)
+    SELECT NVL(SUM(o.total_amount * 0.05), 0) INTO p_total_earnings
     FROM orders o
     JOIN order_assignments oa ON o.order_id = oa.order_id
     JOIN order_statuses os ON o.status_id = os.status_id
-    JOIN users u ON o.user_id = u.user_id
-    LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
     WHERE oa.agent_id = p_agent_id
-    AND o.order_date >= SYSDATE - 30
-    ORDER BY o.order_date DESC;
+    AND os.status_name = 'Delivered';
 
-END get_delivery_agent_dashboard;
+    -- Fixed: Average delivery time in hours using EXTRACT
+    SELECT NVL(AVG(EXTRACT(DAY FROM (NVL(oa.completed_at, o.actual_delivery_date) - oa.assigned_at)) * 24 +
+                   EXTRACT(HOUR FROM (NVL(oa.completed_at, o.actual_delivery_date) - oa.assigned_at)) +
+                   EXTRACT(MINUTE FROM (NVL(oa.completed_at, o.actual_delivery_date) - oa.assigned_at)) / 60), 0) 
+    INTO p_avg_delivery_time
+    FROM order_assignments oa
+    JOIN orders o ON oa.order_id = o.order_id
+    JOIN order_statuses os ON o.status_id = os.status_id
+    WHERE oa.agent_id = p_agent_id
+    AND os.status_name = 'Delivered'
+    AND (oa.completed_at IS NOT NULL OR o.actual_delivery_date IS NOT NULL);
+END;
 /
+
+-- 4. Procedure to update delivery status
+CREATE OR REPLACE PROCEDURE update_delivery_status(
+    p_order_id IN NUMBER,
+    p_agent_id IN NUMBER,
+    p_status IN VARCHAR2,
+    p_notes IN VARCHAR2 DEFAULT NULL,
+    p_success OUT NUMBER,
+    p_message OUT VARCHAR2
+) AS
+    v_current_status VARCHAR2(50);
+    v_valid_agent NUMBER;
+    v_customer_id NUMBER;
+    v_status_id NUMBER;
+BEGIN
+    -- Check if agent is assigned to this order
+    SELECT COUNT(*) INTO v_valid_agent
+    FROM order_assignments
+    WHERE order_id = p_order_id AND agent_id = p_agent_id;
+
+    IF v_valid_agent = 0 THEN
+        p_success := 0;
+        p_message := 'Order not assigned to this delivery agent';
+        RETURN;
+    END IF;
+
+    -- Get current status and customer ID
+    SELECT os.status_name, o.user_id 
+    INTO v_current_status, v_customer_id
+    FROM orders o
+    JOIN order_statuses os ON o.status_id = os.status_id
+    WHERE o.order_id = p_order_id;
+
+    -- Update status based on the requested action
+    IF p_status = 'PICKED_UP' AND v_current_status = 'Processing' THEN
+        -- Get status_id for 'Shipped'
+        SELECT status_id INTO v_status_id FROM order_statuses WHERE status_name = 'Shipped';
+        
+        UPDATE orders
+        SET status_id = v_status_id
+        WHERE order_id = p_order_id;
+        
+        p_success := 1;
+        p_message := 'Order picked up successfully';
+
+    ELSIF p_status = 'OUT_FOR_DELIVERY' AND v_current_status = 'Shipped' THEN
+        -- Get status_id for 'Out for Delivery'
+        SELECT status_id INTO v_status_id FROM order_statuses WHERE status_name = 'Out for Delivery';
+        
+        UPDATE orders
+        SET status_id = v_status_id
+        WHERE order_id = p_order_id;
+        
+        p_success := 1;
+        p_message := 'Order out for delivery';
+
+    ELSIF p_status = 'DELIVERED' AND v_current_status = 'Out for Delivery' THEN
+        -- Get status_id for 'Delivered'
+        SELECT status_id INTO v_status_id FROM order_statuses WHERE status_name = 'Delivered';
+        
+        -- Mark assignment as completed
+        UPDATE order_assignments
+        SET completed_at = SYSTIMESTAMP,
+            notes = NVL(p_notes, notes)
+        WHERE order_id = p_order_id;
+
+        -- Update order status to delivered
+        UPDATE orders
+        SET status_id = v_status_id,
+            actual_delivery_date = SYSTIMESTAMP
+        WHERE order_id = p_order_id;
+
+        -- Fixed MERGE statement syntax
+        MERGE INTO delivery_confirmations dc
+        USING (SELECT p_order_id AS order_id, v_customer_id AS user_id, p_agent_id AS agent_id FROM dual) src
+        ON (dc.order_id = src.order_id)
+        WHEN MATCHED THEN
+            UPDATE SET 
+                agent_confirmed = 1,
+                confirmed_date = CASE WHEN customer_confirmed = 1 THEN SYSTIMESTAMP ELSE confirmed_date END
+        WHEN NOT MATCHED THEN
+            INSERT (order_id, user_id, agent_id, agent_confirmed)
+            VALUES (src.order_id, src.user_id, src.agent_id, 1);
+        
+        p_success := 1;
+        p_message := 'Order delivered successfully';
+
+    ELSE
+        p_success := 0;
+        p_message := 'Invalid status transition from ' || v_current_status || ' to ' || p_status;
+    END IF;
+
+    COMMIT;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        ROLLBACK;
+        p_success := 0;
+        p_message := 'Status not found or invalid data';
+    WHEN OTHERS THEN
+        ROLLBACK;
+        p_success := 0;
+        p_message := 'Error updating delivery status: ' || SQLERRM;
+END;
+/
+
+-- Enhanced procedure for agent to confirm with duplicate check
+CREATE OR REPLACE PROCEDURE confirm_agent_delivery (
+    p_order_id IN NUMBER,
+    p_agent_id IN NUMBER,
+    p_success OUT NUMBER,
+    p_message OUT VARCHAR2
+) AS
+    v_current_agent_confirmed NUMBER;
+    v_current_customer_confirmed NUMBER;
+BEGIN
+    -- Check current confirmation status
+    SELECT agent_confirmed, customer_confirmed 
+    INTO v_current_agent_confirmed, v_current_customer_confirmed
+    FROM delivery_confirmations 
+    WHERE order_id = p_order_id;
+    
+    -- Check if agent has already confirmed
+    IF v_current_agent_confirmed = 1 THEN
+        p_success := 0;
+        p_message := 'Agent has already confirmed this delivery.';
+        RETURN;
+    END IF;
+    
+    -- Update agent confirmation only
+    UPDATE delivery_confirmations 
+    SET agent_confirmed = 1
+    WHERE order_id = p_order_id;
+    
+    p_success := 1;
+    p_message := 'Agent confirmation recorded.';
+    
+    COMMIT;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        ROLLBACK;
+        p_success := 0;
+        p_message := 'Error: Delivery confirmation record not found.';
+    WHEN OTHERS THEN
+        ROLLBACK;
+        p_success := 0;
+        p_message := 'Error: ' || SQLERRM;
+END;
+/
+
+-- Enhanced procedure for customer to confirm with duplicate check
+CREATE OR REPLACE PROCEDURE confirm_customer_delivery (
+    p_order_id IN NUMBER,
+    p_user_id IN NUMBER,
+    p_success OUT NUMBER,
+    p_message OUT VARCHAR2
+) AS
+    v_current_agent_confirmed NUMBER;
+    v_current_customer_confirmed NUMBER;
+BEGIN
+    -- Check current confirmation status
+    SELECT agent_confirmed, customer_confirmed 
+    INTO v_current_agent_confirmed, v_current_customer_confirmed
+    FROM delivery_confirmations 
+    WHERE order_id = p_order_id;
+    
+    -- Check if customer has already confirmed
+    IF v_current_customer_confirmed = 1 THEN
+        p_success := 0;
+        p_message := 'Customer has already confirmed this delivery.';
+        RETURN;
+    END IF;
+    
+    -- Update customer confirmation only
+    UPDATE delivery_confirmations 
+    SET customer_confirmed = 1
+    WHERE order_id = p_order_id;
+    
+    p_success := 1;
+    p_message := 'Customer confirmation recorded.';
+    
+    COMMIT;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        ROLLBACK;
+        p_success := 0;
+        p_message := 'Error: Delivery confirmation record not found.';
+    WHEN OTHERS THEN
+        ROLLBACK;
+        p_success := 0;
+        p_message := 'Error: ' || SQLERRM;
+END;
+/
+
+
+
+CREATE OR REPLACE TRIGGER trg_delivery_confirmation_complete
+AFTER UPDATE ON delivery_confirmations
+FOR EACH ROW
+WHEN (NEW.agent_confirmed = 1 AND NEW.customer_confirmed = 1 AND NEW.confirmed_date IS NULL)
+BEGIN
+    -- Update order status to Delivered when both confirm
+    UPDATE orders
+    SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
+        actual_delivery_date = SYSTIMESTAMP
+    WHERE order_id = :NEW.order_id;
+    
+    -- Update confirmation timestamp
+    UPDATE delivery_confirmations
+    SET confirmed_date = SYSTIMESTAMP
+    WHERE order_id = :NEW.order_id;
+END;
+/
+
+
+
+CREATE OR REPLACE VIEW vw_delivery_confirmation_status AS
+SELECT 
+    dc.order_id,
+    dc.agent_confirmed,
+    dc.customer_confirmed,
+    dc.confirmed_date,
+    os.status_name,
+    CASE 
+        WHEN dc.agent_confirmed = 1 AND dc.customer_confirmed = 1 THEN 'COMPLETED'
+        WHEN dc.agent_confirmed = 1 THEN 'WAITING_CUSTOMER'
+        WHEN dc.customer_confirmed = 1 THEN 'WAITING_AGENT'
+        ELSE 'PENDING_BOTH'
+    END AS confirmation_status
+FROM delivery_confirmations dc
+JOIN orders o ON dc.order_id = o.order_id
+JOIN order_statuses os ON o.status_id = os.status_id;
+
+select * from order_statuses;
+
+SELECT * FROM vw_delivery_confirmation_status WHERE order_id = 594;
+
+
+-- Check trigger status
+SELECT trigger_name, status FROM user_triggers WHERE trigger_name = 'TRG_DELIVERY_CONFIRMATION_COMPLETE';
+
+-- Enable trigger if disabled
+ALTER TRIGGER trg_delivery_confirmation_complete ENABLE;
+
 
 -- Procedure for delivery agent to mark delivery as delivered
 CREATE OR REPLACE PROCEDURE mark_delivery_delivered (
@@ -3285,6 +3586,8 @@ CREATE OR REPLACE PROCEDURE mark_delivery_delivered (
     v_assignment_exists NUMBER;
     v_current_status VARCHAR2(50);
     v_confirmation_exists NUMBER;
+    v_customer_id NUMBER;
+    v_agent_already_confirmed NUMBER;
 BEGIN
     -- Check if assignment exists and belongs to this agent
     SELECT COUNT(*)
@@ -3298,12 +3601,24 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Get current status
-    SELECT os.status_name
-    INTO v_current_status
+    -- Get current status and customer ID
+    SELECT os.status_name, o.user_id
+    INTO v_current_status, v_customer_id
     FROM orders o
     JOIN order_statuses os ON o.status_id = os.status_id
     WHERE o.order_id = p_order_id;
+
+    -- Check if agent has already confirmed
+    SELECT COUNT(*)
+    INTO v_agent_already_confirmed
+    FROM delivery_confirmations
+    WHERE order_id = p_order_id AND agent_confirmed = 1;
+
+    IF v_agent_already_confirmed > 0 THEN
+        p_success := 0;
+        p_message := 'Agent has already confirmed this delivery';
+        RETURN;
+    END IF;
 
     -- Update assignment completion time
     UPDATE order_assignments
@@ -3332,13 +3647,7 @@ BEGIN
             agent_id, 
             agent_confirmed
         )
-        SELECT 
-            p_order_id,
-            o.user_id,
-            p_agent_id,
-            1 -- Agent confirmed
-        FROM orders o
-        WHERE o.order_id = p_order_id;
+        VALUES (p_order_id, v_customer_id, p_agent_id, 1);
     ELSE
         -- Update existing confirmation
         UPDATE delivery_confirmations
@@ -3361,23 +3670,32 @@ BEGIN
             SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
                 actual_delivery_date = SYSTIMESTAMP
             WHERE order_id = p_order_id;
+            
+            p_success := 1;
+            p_message := 'Order delivered successfully';
+
+        ELSE
+            p_success := 1;
+            p_message := 'Order marked as delivered. Waiting for customer confirmation.';
         END IF;
+
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
-            NULL;
+            p_success := 1;
+            p_message := 'Order marked as delivered. Waiting for customer confirmation.';
     END;
 
     COMMIT;
-    p_success := 1;
-    p_message := 'Delivery marked as delivered successfully. Waiting for customer confirmation.';
 
 EXCEPTION
     WHEN OTHERS THEN
         ROLLBACK;
         p_success := 0;
-        p_message := 'Error: ' || SQLERRM;
-END mark_delivery_delivered;
+        p_message := 'Error marking delivery as delivered: ' || SQLERRM;
+END;
 /
+
+
 
 -- Function to get delivery agent's current assignments count
 CREATE OR REPLACE FUNCTION get_delivery_agent_assignment_count (
@@ -3794,78 +4112,91 @@ END;
 SET SERVEROUTPUT ON;
 
 -- Insert into roles (fewer than 10 as logical roles)
-INSERT INTO roles (role_name, description) VALUES ('admin', 'Administrator');
-INSERT INTO roles (role_name, description) VALUES ('customer', 'Customer');
-INSERT INTO roles (role_name, description) VALUES ('seller', 'Seller');
-INSERT INTO roles (role_name, description) VALUES ('delivery_agent', 'Delivery Agent');
+-- Insert into roles (fewer than 10 as logical roles)
+INSERT INTO roles (role_name, description) VALUES ('admin', 'System Administrator with comprehensive access to manage user accounts, oversee plant inventory, process orders, and ensure the platform operates smoothly and securely across all functionalities.');
+INSERT INTO roles (role_name, description) VALUES ('customer', 'Registered customer who explores a wide range of plants, places orders, tracks deliveries, manages their profile, and provides feedback through reviews to enhance the shopping experience.');
+INSERT INTO roles (role_name, description) VALUES ('seller', 'Plant vendor responsible for listing and updating plant inventory, managing stock levels, processing customer orders, and collaborating with delivery agents to ensure timely fulfillment.');
+INSERT INTO roles (role_name, description) VALUES ('delivery_agent', 'Delivery personnel tasked with collecting orders from sellers, ensuring safe and timely delivery to customers’ addresses, and confirming delivery status within the specified schedule.');
 
 -- Insert into discount_types
-INSERT INTO discount_types (name, description) VALUES ('Seasonal', 'Seasonal discount');
-INSERT INTO discount_types (name, description) VALUES ('Category', 'Category discount');
-INSERT INTO discount_types (name, description) VALUES ('Plant-specific', 'Plant specific discount');
-INSERT INTO discount_types (name, description) VALUES ('Festive', 'Festive discount');
-INSERT INTO discount_types (name, description) VALUES ('Special', 'Special discount');
+INSERT INTO discount_types (name, description) VALUES ('Seasonal', 'Promotional discounts offered during specific seasons, such as monsoon or winter, to encourage the purchase of plants suited to Bangladesh’s climatic conditions.');
+INSERT INTO discount_types (name, description) VALUES ('Category', 'Targeted discounts applied to specific plant categories like indoor plants, outdoor trees, or flowering plants to drive sales in popular or overstocked segments.');
+INSERT INTO discount_types (name, description) VALUES ('Plant-specific', 'Special discounts on individual plant varieties to promote new stock, clear excess inventory, or highlight unique plants popular in Bangladeshi households.');
+INSERT INTO discount_types (name, description) VALUES ('Festive', 'Exclusive offers during major Bangladeshi festivals like Eid-ul-Fitr, Durga Puja, or Pohela Boishakh to attract customers celebrating these occasions with plants.');
+INSERT INTO discount_types (name, description) VALUES ('Special', 'Unique discounts for limited-time promotions, loyalty rewards, or milestone events like the platform’s anniversary, encouraging repeat purchases.');
 
 -- Insert into order_statuses
-INSERT INTO order_statuses (status_name, description) VALUES ('Processing', 'Order is being processed');
-INSERT INTO order_statuses (status_name, description) VALUES ('Shipped', 'Order shipped');
-INSERT INTO order_statuses (status_name, description) VALUES ('Delivered', 'Order delivered');
-INSERT INTO order_statuses (status_name, description) VALUES ('Cancelled', 'Order cancelled');
-INSERT INTO order_statuses (status_name, description) VALUES ('Returned', 'Order returned');
-
+INSERT INTO order_statuses (status_name, description) VALUES ('Processing', 'The order is being reviewed, verified, and prepared by the seller, ensuring all items are in stock and ready for dispatch to the customer.');
+INSERT INTO order_statuses (status_name, description) VALUES ('Shipped', 'The order has been packed and handed over to the delivery agent, who is now transporting it to the customer’s specified address.');
+INSERT INTO order_statuses (status_name, description) VALUES ('Delivered', 'The order has been successfully delivered to the customer’s address, with confirmation from the delivery agent and recipient.');
+INSERT INTO order_statuses (status_name, description) VALUES ('Cancelled', 'The order has been cancelled by either the customer or seller due to reasons such as unavailability of stock, payment issues, or customer request.');
+INSERT INTO order_statuses (status_name, description) VALUES ('Returned', 'The order has been returned by the customer due to issues like damaged plants, incorrect delivery, or dissatisfaction with the product.');
 
 -- Insert into delivery_methods
-INSERT INTO delivery_methods (name, description, base_cost, estimated_days) VALUES ('Standard', 'Standard delivery', 5.00, '3-5 days');
-INSERT INTO delivery_methods (name, description, base_cost, estimated_days) VALUES ('Express', 'Express delivery', 10.00, '1-2 days');
-INSERT INTO delivery_methods (name, description, base_cost, estimated_days) VALUES ('Pickup', 'Store pickup', 0.00, 'Same day');
+INSERT INTO delivery_methods (name, description, base_cost, estimated_days) 
+VALUES ('Standard', 'Cost-effective delivery option for customers across Bangladesh, ideal for non-urgent orders with reliable service.', 5.00, '3-5 days');
+INSERT INTO delivery_methods (name, description, base_cost, estimated_days) 
+VALUES ('Express', 'Premium fast-track delivery for urgent orders, ensuring plants reach customers quickly, especially in urban areas like Dhaka.', 10.00, '1-2 days');
+INSERT INTO delivery_methods (name, description, base_cost, estimated_days) 
+VALUES ('Pickup', 'Convenient option allowing customers to collect their orders directly from the seller’s store or warehouse, saving on delivery costs.', 0.00, 'Same day');
 
--- Insert into users (10 users: 1 admin, 3 sellers, 3 customers, 3 delivery agents)
-INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) VALUES ('admin1', 'admin1@example.com', 'hash1', 'Admin', 'One', '1234567890', 'Admin Addr');
-INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) VALUES ('seller1', 'seller1@example.com', 'hash2', 'Seller', 'One', '1234567891', 'Seller Addr1');
-INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) VALUES ('seller2', 'seller2@example.com', 'hash3', 'Seller', 'Two', '1234567892', 'Seller Addr2');
-INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) VALUES ('seller3', 'seller3@example.com', 'hash4', 'Seller', 'Three', '1234567893', 'Seller Addr3');
-INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) VALUES ('cust1', 'cust1@example.com', 'hash5', 'Cust', 'One', '1234567894', 'Cust Addr1');
-INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) VALUES ('cust2', 'cust2@example.com', 'hash6', 'Cust', 'Two', '1234567895', 'Cust Addr2');
-INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) VALUES ('cust3', 'cust3@example.com', 'hash7', 'Cust', 'Three', '1234567896', 'Cust Addr3');
-INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) VALUES ('agent1', 'agent1@example.com', 'hash8', 'Agent', 'One', '1234567897', 'Agent Addr1');
-INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) VALUES ('agent2', 'agent2@example.com', 'hash9', 'Agent', 'Two', '1234567898', 'Agent Addr2');
-INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) VALUES ('agent3', 'agent3@example.com', 'hash10', 'Agent', 'Three', '1234567899', 'Agent Addr3');
+-- Insert into users (10 users: 1 admin, 3 sellers, 3 customers, 3 delivery agents with Bangladeshi names and detailed addresses)
+INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) 
+VALUES ('admin_raihan', 'raihan@example.com', 'hash1', 'Raihan', 'Chowdhury', '01712345678', 'House #12, Road #5, Block B, Banani Model Town, Dhaka-1213, Bangladesh, near Banani Lake and opposite to Chairman Bari');
+INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) 
+VALUES ('seller_tanvir', 'tanvir@example.com', 'hash2', 'Tanvir', 'Hossain', '01987654321', 'Flat 3A, House #45, Road #2, Sector 3, Uttara Model Town, Dhaka-1230, Bangladesh, near Uttara Community Center');
+INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) 
+VALUES ('seller_nusrat', 'nusrat@example.com', 'hash3', 'Nusrat', 'Jahan', '01678901234', 'House #8, Road #15, Nikunja 2, Khilkhet, Dhaka-1229, Bangladesh, adjacent to Khilkhet Water Tank');
+INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) 
+VALUES ('seller_arif', 'arif@example.com', 'hash4', 'Arif', 'Rahman', '01834567890', 'Plot #22, Avenue 1, Mirpur DOHS, Dhaka-1216, Bangladesh, near Mirpur Cantonment Gate');
+INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) 
+VALUES ('cust_fatima', 'fatima@example.com', 'hash5', 'Fatima', 'Begum', '01745678901', 'House #19, Road #7, Dhanmondi Residential Area, Dhaka-1205, Bangladesh, opposite Dhanmondi Lake Park');
+INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) 
+VALUES ('cust_mahmud', 'mahmud@example.com', 'hash6', 'Mahmud', 'Hasan', '01912345678', 'Flat 5B, House #33, Road #4, Gulshan 1, Dhaka-1212, Bangladesh, near Gulshan Pink City Mall');
+INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) 
+VALUES ('cust_sadia', 'sadia@example.com', 'hash7', 'Sadia', 'Akter', '01623456789', 'House #25, Road #12, Baridhara Diplomatic Zone, Dhaka-1212, Bangladesh, near Baridhara Park');
+INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) 
+VALUES ('agent_kamrul', 'kamrul@example.com', 'hash8', 'Kamrul', 'Islam', '01856789012', 'House #10, Road #3, Mohammadpur Housing Estate, Dhaka-1207, Bangladesh, near Mohammadpur Central Mosque');
+INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) 
+VALUES ('agent_sumon', 'sumon@example.com', 'hash9', 'Sumon', 'Ahmed', '01767890123', 'Flat 2C, House #17, Road #8, Bashundhara Residential Area, Dhaka-1229, Bangladesh, near Apollo Hospital');
+INSERT INTO users (username, email, password_hash, first_name, last_name, phone, address) 
+VALUES ('agent_ayesha', 'ayesha@example.com', 'hash10', 'Ayesha', 'Siddiqua', '01978901234', 'House #30, Road #6, Khilgaon Chowdhury Para, Dhaka-1219, Bangladesh, near Khilgaon Taltola Market');
+
 
 -- Assign roles (user_roles)
-
 INSERT INTO user_roles (user_id, role_id)
 SELECT u.user_id, r.role_id
 FROM users u
 JOIN roles r ON r.role_name = 'admin'
-WHERE u.username = 'admin1';
+WHERE u.username = 'admin_raihan';
 
 INSERT INTO user_roles (user_id, role_id)
 SELECT u.user_id, r.role_id
 FROM users u
 JOIN roles r ON r.role_name = 'seller'
-WHERE u.username IN ('seller1','seller2','seller3');
+WHERE u.username IN ('seller_tanvir', 'seller_nusrat', 'seller_arif');
 
 INSERT INTO user_roles (user_id, role_id)
 SELECT u.user_id, r.role_id
 FROM users u
 JOIN roles r ON r.role_name = 'customer'
-WHERE u.username IN ('cust1','cust2','cust3');
+WHERE u.username IN ('cust_fatima', 'cust_mahmud', 'cust_sadia');
 
 INSERT INTO user_roles (user_id, role_id)
 SELECT u.user_id, r.role_id
 FROM users u
 JOIN roles r ON r.role_name = 'delivery_agent'
-WHERE u.username IN ('agent1','agent2','agent3');
+WHERE u.username IN ('agent_kamrul', 'agent_sumon', 'agent_ayesha');
 
 -- Delivery agents using username lookup
 INSERT INTO delivery_agents (user_id, vehicle_type, license_number)
-SELECT u.user_id, 'Bike', 'LIC1' FROM users u WHERE u.username = 'agent1';
+SELECT u.user_id, 'Bike', 'LIC-BD-001' FROM users u WHERE u.username = 'agent_kamrul';
 
 INSERT INTO delivery_agents (user_id, vehicle_type, license_number)
-SELECT u.user_id, 'Car', 'LIC2' FROM users u WHERE u.username = 'agent2';
+SELECT u.user_id, 'Car', 'LIC-BD-002' FROM users u WHERE u.username = 'agent_sumon';
 
 INSERT INTO delivery_agents (user_id, vehicle_type, license_number)
-SELECT u.user_id, 'Van', 'LIC3' FROM users u WHERE u.username = 'agent3';
+SELECT u.user_id, 'Van', 'LIC-BD-003' FROM users u WHERE u.username = 'agent_ayesha';
 
 -- Insert into plant_categories (10)
 INSERT INTO plant_categories (name, slug) VALUES ('Indoor', 'indoor');
@@ -3879,643 +4210,750 @@ INSERT INTO plant_categories (name, slug) VALUES ('Vegetables', 'vegetables');
 INSERT INTO plant_categories (name, slug) VALUES ('Fruits', 'fruits');
 INSERT INTO plant_categories (name, slug) VALUES ('Cacti', 'cacti');
 
-
-
-SELECT user_id, username FROM users;
-
-select * from plants;
-
+-- Insert into plants (10 plants with Bangladeshi context and highly detailed descriptions)
+INSERT INTO plants (name, description, base_price, stock_quantity, seller_id)
+SELECT 'Neem Tree', 'The Neem Tree (Azadirachta indica) is a fast-growing, evergreen tree revered in Bangladesh for its medicinal and insect-repellent properties. Its leaves are used in traditional remedies for skin ailments and as a natural pesticide in gardens. Perfect for large backyards or rural orchards, it provides ample shade and thrives in Bangladesh’s warm climate.', 10.00, 100, u.user_id 
+FROM users u WHERE u.username = 'seller_tanvir';
 
 INSERT INTO plants (name, description, base_price, stock_quantity, seller_id)
-SELECT 'Plant1','Desc1',10.00,100,u.user_id FROM users u WHERE u.username = 'seller1';
+SELECT 'Money Plant', 'The Money Plant (Epipremnum aureum), also known as Devil’s Ivy, is a popular indoor plant in Bangladeshi homes, believed to bring prosperity and good fortune. Its heart-shaped, glossy green leaves with yellow variegation thrive in low to moderate light, making it ideal for apartments in Dhaka or Chittagong. Requires minimal care and adds a touch of greenery to any space.', 15.00, 150, u.user_id 
+FROM users u WHERE u.username = 'seller_tanvir';
 
 INSERT INTO plants (name, description, base_price, stock_quantity, seller_id)
-SELECT 'Plant2','Desc2',15.00,150,u.user_id FROM users u WHERE u.username = 'seller1';
+SELECT 'Aloe Vera', 'Aloe Vera (Aloe barbadensis) is a succulent with thick, fleshy leaves containing a cooling gel widely used for skincare and minor burns in Bangladesh. Its drought-tolerant nature makes it perfect for sunny balconies or rooftops in urban areas like Dhaka. This low-maintenance plant is a must-have for natural remedy enthusiasts.', 20.00, 200, u.user_id 
+FROM users u WHERE u.username = 'seller_nusrat';
 
 INSERT INTO plants (name, description, base_price, stock_quantity, seller_id)
-SELECT 'Plant3','Desc3',20.00,200,u.user_id FROM users u WHERE u.username = 'seller2';
+SELECT 'Marigold', 'Marigolds (Tagetes spp.) are vibrant flowering plants cherished in Bangladesh for their bright yellow and orange blooms, often used in festivals like Pohela Boishakh and Durga Puja. Easy to grow in pots or garden beds, they attract pollinators and add a festive charm to any outdoor space in rural or urban settings.', 25.00, 250, u.user_id 
+FROM users u WHERE u.username = 'seller_nusrat';
 
 INSERT INTO plants (name, description, base_price, stock_quantity, seller_id)
-SELECT 'Plant4','Desc4',25.00,250,u.user_id FROM users u WHERE u.username = 'seller2';
+SELECT 'Tulsi', 'Tulsi (Ocimum tenuiflorum), or Holy Basil, is a sacred herb in Bangladesh, valued for its medicinal properties and spiritual significance in Hindu and Muslim households. Its aromatic leaves are used in teas and remedies for colds and stress. Grows well in pots or small gardens with moderate sunlight, perfect for home cultivation.', 30.00, 300, u.user_id 
+FROM users u WHERE u.username = 'seller_arif';
 
 INSERT INTO plants (name, description, base_price, stock_quantity, seller_id)
-SELECT 'Plant5','Desc5',30.00,300,u.user_id FROM users u WHERE u.username = 'seller3';
+SELECT 'Mango Tree', 'The Mango Tree (Mangifera indica) is a beloved fruit tree in Bangladesh, known for producing juicy, sweet mangoes during the summer season. Ideal for large gardens or rural orchards, this tree requires ample space and sunlight to thrive, making it a favorite for homeowners seeking fresh, homegrown fruit.', 35.00, 350, u.user_id 
+FROM users u WHERE u.username = 'seller_arif';
 
 INSERT INTO plants (name, description, base_price, stock_quantity, seller_id)
-SELECT 'Plant6','Desc6',35.00,350,u.user_id FROM users u WHERE u.username = 'seller3';
+SELECT 'Bottle Gourd', 'The Bottle Gourd (Lagenaria siceraria) is a climbing vegetable plant commonly grown in Bangladeshi households for its edible gourds, used in curries and stir-fries. Its vigorous vines require trellis support, making it ideal for rooftop or backyard gardens. A productive plant for home vegetable enthusiasts.', 40.00, 400, u.user_id 
+FROM users u WHERE u.username = 'seller_tanvir';
 
 INSERT INTO plants (name, description, base_price, stock_quantity, seller_id)
-SELECT 'Plant7','Desc7',40.00,400,u.user_id FROM users u WHERE u.username = 'seller1';
+SELECT 'Rose', 'Roses (Rosa spp.) are classic flowering plants with fragrant, colorful blooms, widely used in Bangladeshi gardens and for gifting during special occasions like weddings or Eid. Available in various colors, they thrive in well-drained soil and add elegance to any home or event space.', 45.00, 450, u.user_id 
+FROM users u WHERE u.username = 'seller_nusrat';
 
 INSERT INTO plants (name, description, base_price, stock_quantity, seller_id)
-SELECT 'Plant8','Desc8',45.00,450,u.user_id FROM users u WHERE u.username = 'seller2';
+SELECT 'Cactus', 'Cacti (various species) are low-maintenance desert plants perfect for busy urban dwellers in Bangladesh. Their unique shapes and minimal water needs make them ideal for small apartments or offices in cities like Dhaka. A great choice for those seeking stylish, drought-resistant greenery.', 50.00, 500, u.user_id 
+FROM users u WHERE u.username = 'seller_arif';
 
 INSERT INTO plants (name, description, base_price, stock_quantity, seller_id)
-SELECT 'Plant9','Desc9',50.00,500,u.user_id FROM users u WHERE u.username = 'seller3';
-
-INSERT INTO plants (name, description, base_price, stock_quantity, seller_id)
-SELECT 'Plant10','Desc10',55.00,550,u.user_id FROM users u WHERE u.username = 'seller1';
+SELECT 'Bamboo', 'Bamboo (Bambusa spp.) is a fast-growing, versatile plant used in Bangladesh for privacy screens, decorative borders, or even construction. Its lush green stalks thrive in moist soil and add a tropical aesthetic to gardens or courtyards, making it a popular choice for landscaping.', 55.00, 550, u.user_id 
+FROM users u WHERE u.username = 'seller_tanvir';
 
 COMMIT;
 
+-- Insert into plant_category_mapping
+INSERT INTO plant_category_mapping (plant_id, category_id)
+SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'trees' WHERE p.name = 'Neem Tree';
 
 INSERT INTO plant_category_mapping (plant_id, category_id)
-SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'indoor' WHERE p.name = 'Plant1';
+SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'indoor' WHERE p.name = 'Money Plant';
 
 INSERT INTO plant_category_mapping (plant_id, category_id)
-SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'outdoor' WHERE p.name = 'Plant2';
+SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'succulents' WHERE p.name = 'Aloe Vera';
 
 INSERT INTO plant_category_mapping (plant_id, category_id)
-SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'succulents' WHERE p.name = 'Plant3';
+SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'flowers' WHERE p.name = 'Marigold';
 
 INSERT INTO plant_category_mapping (plant_id, category_id)
-SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'flowers' WHERE p.name = 'Plant4';
+SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'herbs' WHERE p.name = 'Tulsi';
 
 INSERT INTO plant_category_mapping (plant_id, category_id)
-SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'herbs' WHERE p.name = 'Plant5';
+SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'trees' WHERE p.name = 'Mango Tree';
 
 INSERT INTO plant_category_mapping (plant_id, category_id)
-SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'trees' WHERE p.name = 'Plant6';
+SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'vegetables' WHERE p.name = 'Bottle Gourd';
 
 INSERT INTO plant_category_mapping (plant_id, category_id)
-SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'shrubs' WHERE p.name = 'Plant7';
+SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'flowers' WHERE p.name = 'Rose';
 
 INSERT INTO plant_category_mapping (plant_id, category_id)
-SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'vegetables' WHERE p.name = 'Plant8';
+SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'cacti' WHERE p.name = 'Cactus';
 
 INSERT INTO plant_category_mapping (plant_id, category_id)
-SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'fruits' WHERE p.name = 'Plant9';
-
-INSERT INTO plant_category_mapping (plant_id, category_id)
-SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'cacti' WHERE p.name = 'Plant10';
+SELECT p.plant_id, c.category_id FROM plants p JOIN plant_categories c ON c.slug = 'shrubs' WHERE p.name = 'Bamboo';
 
 COMMIT;
 
+select * from plant_images;
+
+-- Insert into plant_images
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'Screenshot 2025-08-31 233535.png', 1 FROM plants p WHERE p.name = 'Neem Tree';
 
 INSERT INTO plant_images (plant_id, image_url, is_primary)
-SELECT p.plant_id, 'img1.jpg', 1 FROM plants p WHERE p.name = 'Plant1';
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1701266501377-27f4d58c15cd?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDEwNXx8fGVufDB8fHx8fA%3D%3D', 0 FROM plants p WHERE p.name = 'Neem Tree';
 
 INSERT INTO plant_images (plant_id, image_url, is_primary)
-SELECT p.plant_id, 'img1b.jpg', 0 FROM plants p WHERE p.name = 'Plant1';
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1686050136769-b6001f8e2605?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDExM3x8fGVufDB8fHx8fA%3D%3D', 1 FROM plants p WHERE p.name = 'Money Plant';
 
 INSERT INTO plant_images (plant_id, image_url, is_primary)
-SELECT p.plant_id, 'img2.jpg', 1 FROM plants p WHERE p.name = 'Plant2';
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1747640483395-cc94a4f5b510?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDEyMHx8fGVufDB8fHx8fA%3D%3D', 0 FROM plants p WHERE p.name = 'Money Plant';
 
 INSERT INTO plant_images (plant_id, image_url, is_primary)
-SELECT p.plant_id, 'img2b.jpg', 0 FROM plants p WHERE p.name = 'Plant2';
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1682414270171-a43b78bced2d?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDEzM3x8fGVufDB8fHx8fA%3D%3D', 1 FROM plants p WHERE p.name = 'Aloe Vera';
 
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1646623160481-e452a925ac7d?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDcwfHx8ZW58MHx8fHx8', 0 FROM plants p WHERE p.name = 'Aloe Vera';
 
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img3.jpg', 1 FROM plants p WHERE p.name = 'Plant3';
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img3b.jpg', 0 FROM plants p WHERE p.name = 'Plant3';
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img4.jpg', 1 FROM plants p WHERE p.name = 'Plant4';
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img4b.jpg', 0 FROM plants p WHERE p.name = 'Plant4';
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img5.jpg', 1 FROM plants p WHERE p.name = 'Plant5';
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img5b.jpg', 0 FROM plants p WHERE p.name = 'Plant5';
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img6.jpg', 1 FROM plants p WHERE p.name = 'Plant6';
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img6b.jpg', 0 FROM plants p WHERE p.name = 'Plant6';
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img7.jpg', 1 FROM plants p WHERE p.name = 'Plant7';
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img7b.jpg', 0 FROM plants p WHERE p.name = 'Plant7';
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img8.jpg', 1 FROM plants p WHERE p.name = 'Plant8';
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img8b.jpg', 0 FROM plants p WHERE p.name = 'Plant8';
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img9.jpg', 1 FROM plants p WHERE p.name = 'Plant9';
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img9b.jpg', 0 FROM plants p WHERE p.name = 'Plant9';
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img10.jpg', 1 FROM plants p WHERE p.name = 'Plant10';
-INSERT INTO plant_images (plant_id, image_url, is_primary) SELECT p.plant_id, 'img10b.jpg', 0 FROM plants p WHERE p.name = 'Plant10';
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1601211230355-571557d96d3b?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDQxfHx8ZW58MHx8fHx8', 1 FROM plants p WHERE p.name = 'Marigold';
+
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1723472769589-ce166d5af5cb?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDg1fHx8ZW58MHx8fHx8', 0 FROM plants p WHERE p.name = 'Marigold';
+
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'https://plus.unsplash.com/premium_photo-1661328192450-73b77d474918?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDE0OHx8fGVufDB8fHx8fA%3D%3D', 1 FROM plants p WHERE p.name = 'Tulsi';
+
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1560508892-cc2f310911fb?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDE1M3x8fGVufDB8fHx8fA%3D%3D', 0 FROM plants p WHERE p.name = 'Tulsi';
+
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1713885135839-cec2eae9044b?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDE2NHx8fGVufDB8fHx8fA%3D%3D', 1 FROM plants p WHERE p.name = 'Mango Tree';
+
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1693236084754-d3750e2eb097?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDE1NXx8fGVufDB8fHx8fA%3D%3D', 0 FROM plants p WHERE p.name = 'Mango Tree';
+
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1564060958001-a665e6fb6d3d?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDE3fHx8ZW58MHx8fHx8', 1 FROM plants p WHERE p.name = 'Bottle Gourd';
+
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1659633411299-c5c6ce8094e5?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDIwM3x8fGVufDB8fHx8fA%3D%3D', 0 FROM plants p WHERE p.name = 'Bottle Gourd';
+
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1612456916096-16e98919e101?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDE5OXx8fGVufDB8fHx8fA%3D%3D', 1 FROM plants p WHERE p.name = 'Rose';
+
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1612456916096-16e98919e101?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDE5OXx8fGVufDB8fHx8fA%3D%3D', 0 FROM plants p WHERE p.name = 'Rose';
+
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1713892194384-de89fa60ddc2?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDIwNXx8fGVufDB8fHx8fA%3D%3D', 1 FROM plants p WHERE p.name = 'Cactus';
+
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1607369799260-959137a24656?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDE5NXx8fGVufDB8fHx8fA%3D%3D', 0 FROM plants p WHERE p.name = 'Cactus';
+
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1713885135839-cec2eae9044b?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDE2NHx8fGVufDB8fHx8fA%3D%3D', 1 FROM plants p WHERE p.name = 'Bamboo';
+
+INSERT INTO plant_images (plant_id, image_url, is_primary)
+SELECT p.plant_id, 'https://images.unsplash.com/photo-1693236084754-d3750e2eb097?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDE1NXx8fGVufDB8fHx8fA%3D%3D', 0 FROM plants p WHERE p.name = 'Bamboo';
 
 COMMIT;
 
+-- Insert into plant_sizes
+INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
+SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Neem Tree';
 
 INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
-SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Plant1';
+SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Neem Tree';
 
 INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
-SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Plant1';
+SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Money Plant';
 
 INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
-SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Plant2';
+SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Money Plant';
 
 INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
-SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Plant2';
+SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Aloe Vera';
 
 INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
-SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Plant3';
+SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Aloe Vera';
 
 INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
-SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Plant3';
-
+SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Marigold';
 
 INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
-SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Plant4';
-INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
-SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Plant4';
+SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Marigold';
 
-INSERT INTO plant_sizes (plant_id, size_name, price_adjustment) SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Plant5';
-INSERT INTO plant_sizes (plant_id, size_name, price_adjustment) SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Plant5';
-INSERT INTO plant_sizes (plant_id, size_name, price_adjustment) SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Plant6';
-INSERT INTO plant_sizes (plant_id, size_name, price_adjustment) SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Plant6';
-INSERT INTO plant_sizes (plant_id, size_name, price_adjustment) SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Plant7';
-INSERT INTO plant_sizes (plant_id, size_name, price_adjustment) SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Plant7';
-INSERT INTO plant_sizes (plant_id, size_name, price_adjustment) SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Plant8';
-INSERT INTO plant_sizes (plant_id, size_name, price_adjustment) SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Plant8';
-INSERT INTO plant_sizes (plant_id, size_name, price_adjustment) SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Plant9';
-INSERT INTO plant_sizes (plant_id, size_name, price_adjustment) SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Plant9';
-INSERT INTO plant_sizes (plant_id, size_name, price_adjustment) SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Plant10';
-INSERT INTO plant_sizes (plant_id, size_name, price_adjustment) SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Plant10';
+INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
+SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Tulsi';
+
+INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
+SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Tulsi';
+
+INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
+SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Mango Tree';
+
+INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
+SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Mango Tree';
+
+INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
+SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Bottle Gourd';
+
+INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
+SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Bottle Gourd';
+
+INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
+SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Rose';
+
+INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
+SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Rose';
+
+INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
+SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Cactus';
+
+INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
+SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Cactus';
+
+INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
+SELECT p.plant_id, 'Small', -5.00 FROM plants p WHERE p.name = 'Bamboo';
+
+INSERT INTO plant_sizes (plant_id, size_name, price_adjustment)
+SELECT p.plant_id, 'Medium', 0.00 FROM plants p WHERE p.name = 'Bamboo';
 
 COMMIT;
 
-
+-- Insert into discounts
 INSERT INTO discounts (discount_type_id, name, discount_value, is_percentage, start_date, end_date)
-SELECT dt.discount_type_id, 'Disc1', 10.00, 1, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
-FROM discount_types dt WHERE dt.name = 'Seasonal';
-
-INSERT INTO discounts (discount_type_id, name, discount_value, is_percentage, start_date, end_date)
-SELECT dt.discount_type_id, 'Disc2', 15.00, 0, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
-FROM discount_types dt WHERE dt.name = 'Category';
-
-INSERT INTO discounts (discount_type_id, name, discount_value, is_percentage, start_date, end_date)
-SELECT dt.discount_type_id, 'Disc3', 20.00, 1, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
-FROM discount_types dt WHERE dt.name = 'Plant-specific';
-
-INSERT INTO discounts (discount_type_id, name, discount_value, is_percentage, start_date, end_date)
-SELECT dt.discount_type_id, 'Disc4', 25.00, 0, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
+SELECT dt.discount_type_id, 'Eid-ul-Fitr Offer', 10.00, 1, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
 FROM discount_types dt WHERE dt.name = 'Festive';
 
 INSERT INTO discounts (discount_type_id, name, discount_value, is_percentage, start_date, end_date)
-SELECT dt.discount_type_id, 'Disc5', 30.00, 1, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
-FROM discount_types dt WHERE dt.name = 'Special';
-
-
-INSERT INTO discounts (discount_type_id, name, discount_value, is_percentage, start_date, end_date)
-SELECT dt.discount_type_id, 'Disc6', 35.00, 0, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
-FROM discount_types dt WHERE dt.name = 'Seasonal';
-
-INSERT INTO discounts (discount_type_id, name, discount_value, is_percentage, start_date, end_date)
-SELECT dt.discount_type_id, 'Disc7', 40.00, 1, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
+SELECT dt.discount_type_id, 'Indoor Plant Bonanza', 15.00, 0, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
 FROM discount_types dt WHERE dt.name = 'Category';
 
 INSERT INTO discounts (discount_type_id, name, discount_value, is_percentage, start_date, end_date)
-SELECT dt.discount_type_id, 'Disc8', 45.00, 0, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
+SELECT dt.discount_type_id, 'Aloe Vera Special', 20.00, 1, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
 FROM discount_types dt WHERE dt.name = 'Plant-specific';
 
 INSERT INTO discounts (discount_type_id, name, discount_value, is_percentage, start_date, end_date)
-SELECT dt.discount_type_id, 'Disc9', 50.00, 1, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
+SELECT dt.discount_type_id, 'Monsoon Green Deal', 25.00, 0, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
+FROM discount_types dt WHERE dt.name = 'Seasonal';
+
+INSERT INTO discounts (discount_type_id, name, discount_value, is_percentage, start_date, end_date)
+SELECT dt.discount_type_id, 'Loyal Customer Reward', 30.00, 1, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
+FROM discount_types dt WHERE dt.name = 'Special';
+
+INSERT INTO discounts (discount_type_id, name, discount_value, is_percentage, start_date, end_date)
+SELECT dt.discount_type_id, 'Pohela Boishakh Promo', 35.00, 0, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
 FROM discount_types dt WHERE dt.name = 'Festive';
 
 INSERT INTO discounts (discount_type_id, name, discount_value, is_percentage, start_date, end_date)
-SELECT dt.discount_type_id, 'Disc10', 55.00, 0, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
+SELECT dt.discount_type_id, 'Outdoor Garden Sale', 40.00, 1, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
+FROM discount_types dt WHERE dt.name = 'Category';
+
+INSERT INTO discounts (discount_type_id, name, discount_value, is_percentage, start_date, end_date)
+SELECT dt.discount_type_id, 'Tulsi Health Deal', 45.00, 0, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
+FROM discount_types dt WHERE dt.name = 'Plant-specific';
+
+INSERT INTO discounts (discount_type_id, name, discount_value, is_percentage, start_date, end_date)
+SELECT dt.discount_type_id, 'Winter Bloom Offer', 50.00, 1, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
+FROM discount_types dt WHERE dt.name = 'Seasonal';
+
+INSERT INTO discounts (discount_type_id, name, discount_value, is_percentage, start_date, end_date)
+SELECT dt.discount_type_id, 'Store Anniversary Sale', 55.00, 0, SYSTIMESTAMP - INTERVAL '1' DAY, SYSTIMESTAMP + INTERVAL '10' DAY
 FROM discount_types dt WHERE dt.name = 'Special';
 
 COMMIT;
 
+-- Insert into plant_discounts
+INSERT INTO plant_discounts (plant_id, discount_id)
+SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Eid-ul-Fitr Offer' WHERE p.name = 'Neem Tree';
 
 INSERT INTO plant_discounts (plant_id, discount_id)
-SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Disc1' WHERE p.name = 'Plant1';
+SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Indoor Plant Bonanza' WHERE p.name = 'Money Plant';
 
 INSERT INTO plant_discounts (plant_id, discount_id)
-SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Disc2' WHERE p.name = 'Plant2';
+SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Aloe Vera Special' WHERE p.name = 'Aloe Vera';
 
 INSERT INTO plant_discounts (plant_id, discount_id)
-SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Disc3' WHERE p.name = 'Plant3';
+SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Monsoon Green Deal' WHERE p.name = 'Marigold';
 
 INSERT INTO plant_discounts (plant_id, discount_id)
-SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Disc4' WHERE p.name = 'Plant4';
+SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Loyal Customer Reward' WHERE p.name = 'Tulsi';
 
 INSERT INTO plant_discounts (plant_id, discount_id)
-SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Disc5' WHERE p.name = 'Plant5';
+SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Pohela Boishakh Promo' WHERE p.name = 'Mango Tree';
 
 INSERT INTO plant_discounts (plant_id, discount_id)
-SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Disc6' WHERE p.name = 'Plant6';
+SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Outdoor Garden Sale' WHERE p.name = 'Bottle Gourd';
 
 INSERT INTO plant_discounts (plant_id, discount_id)
-SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Disc7' WHERE p.name = 'Plant7';
+SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Tulsi Health Deal' WHERE p.name = 'Rose';
 
 INSERT INTO plant_discounts (plant_id, discount_id)
-SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Disc8' WHERE p.name = 'Plant8';
+SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Winter Bloom Offer' WHERE p.name = 'Cactus';
 
 INSERT INTO plant_discounts (plant_id, discount_id)
-SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Disc9' WHERE p.name = 'Plant9';
-
-INSERT INTO plant_discounts (plant_id, discount_id)
-SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Disc10' WHERE p.name = 'Plant10';
+SELECT p.plant_id, d.discount_id FROM plants p JOIN discounts d ON d.name = 'Store Anniversary Sale' WHERE p.name = 'Bamboo';
 
 COMMIT;
 
+-- Insert into orders
+INSERT INTO orders (user_id, order_number, status_id, delivery_method_id, delivery_address, total_amount)
+SELECT u.user_id, 'ORD1', s.status_id, m.method_id, 'House #19, Road #7, Dhanmondi Residential Area, Dhaka-1205, Bangladesh, opposite Dhanmondi Lake Park', 100.00
+FROM users u, order_statuses s, delivery_methods m
+WHERE u.username = 'cust_fatima' AND s.status_name = 'Processing' AND m.name = 'Standard';
 
 INSERT INTO orders (user_id, order_number, status_id, delivery_method_id, delivery_address, total_amount)
-SELECT u.user_id, 'ORD1', s.status_id, m.method_id, 'Addr1', 100.00
+SELECT u.user_id, 'ORD2', s.status_id, m.method_id, 'House #19, Road #7, Dhanmondi Residential Area, Dhaka-1205, Bangladesh, opposite Dhanmondi Lake Park', 150.00
 FROM users u, order_statuses s, delivery_methods m
-WHERE u.username = 'cust1' AND s.status_name = 'Processing' AND m.name = 'Standard';
+WHERE u.username = 'cust_fatima' AND s.status_name = 'Processing' AND m.name = 'Standard';
 
 INSERT INTO orders (user_id, order_number, status_id, delivery_method_id, delivery_address, total_amount)
-SELECT u.user_id, 'ORD2', s.status_id, m.method_id, 'Addr2', 150.00
+SELECT u.user_id, 'ORD3', s.status_id, m.method_id, 'Flat 5B, House #33, Road #4, Gulshan 1, Dhaka-1212, Bangladesh, near Gulshan Pink City Mall', 200.00
 FROM users u, order_statuses s, delivery_methods m
-WHERE u.username = 'cust1' AND s.status_name = 'Processing' AND m.name = 'Standard';
+WHERE u.username = 'cust_mahmud' AND s.status_name = 'Processing' AND m.name = 'Express';
 
 INSERT INTO orders (user_id, order_number, status_id, delivery_method_id, delivery_address, total_amount)
-SELECT u.user_id, 'ORD3', s.status_id, m.method_id, 'Addr3', 200.00
+SELECT u.user_id, 'ORD4', s.status_id, m.method_id, 'Flat 5B, House #33, Road #4, Gulshan 1, Dhaka-1212, Bangladesh, near Gulshan Pink City Mall', 250.00
 FROM users u, order_statuses s, delivery_methods m
-WHERE u.username = 'cust2' AND s.status_name = 'Processing' AND m.name = 'Express';
+WHERE u.username = 'cust_mahmud' AND s.status_name = 'Processing' AND m.name = 'Express';
 
 INSERT INTO orders (user_id, order_number, status_id, delivery_method_id, delivery_address, total_amount)
-SELECT u.user_id, 'ORD4', s.status_id, m.method_id, 'Addr4', 250.00
+SELECT u.user_id, 'ORD5', s.status_id, m.method_id, 'House #25, Road #12, Baridhara Diplomatic Zone, Dhaka-1212, Bangladesh, near Baridhara Park', 300.00
 FROM users u, order_statuses s, delivery_methods m
-WHERE u.username = 'cust2' AND s.status_name = 'Processing' AND m.name = 'Express';
+WHERE u.username = 'cust_sadia' AND s.status_name = 'Processing' AND m.name = 'Pickup';
 
 INSERT INTO orders (user_id, order_number, status_id, delivery_method_id, delivery_address, total_amount)
-SELECT u.user_id, 'ORD5', s.status_id, m.method_id, 'Addr5', 300.00
+SELECT u.user_id, 'ORD6', s.status_id, m.method_id, 'House #25, Road #12, Baridhara Diplomatic Zone, Dhaka-1212, Bangladesh, near Baridhara Park', 350.00
 FROM users u, order_statuses s, delivery_methods m
-WHERE u.username = 'cust3' AND s.status_name = 'Processing' AND m.name = 'Pickup';
+WHERE u.username = 'cust_sadia' AND s.status_name = 'Processing' AND m.name = 'Pickup';
 
 INSERT INTO orders (user_id, order_number, status_id, delivery_method_id, delivery_address, total_amount)
-SELECT u.user_id, 'ORD6', s.status_id, m.method_id, 'Addr6', 350.00
+SELECT u.user_id, 'ORD7', s.status_id, m.method_id, 'House #19, Road #7, Dhanmondi Residential Area, Dhaka-1205, Bangladesh, opposite Dhanmondi Lake Park', 400.00
 FROM users u, order_statuses s, delivery_methods m
-WHERE u.username = 'cust3' AND s.status_name = 'Processing' AND m.name = 'Pickup';
+WHERE u.username = 'cust_fatima' AND s.status_name = 'Processing' AND m.name = 'Standard';
 
 INSERT INTO orders (user_id, order_number, status_id, delivery_method_id, delivery_address, total_amount)
-SELECT u.user_id, 'ORD7', s.status_id, m.method_id, 'Addr7', 400.00
+SELECT u.user_id, 'ORD8', s.status_id, m.method_id, 'Flat 5B, House #33, Road #4, Gulshan 1, Dhaka-1212, Bangladesh, near Gulshan Pink City Mall', 450.00
 FROM users u, order_statuses s, delivery_methods m
-WHERE u.username = 'cust1' AND s.status_name = 'Processing' AND m.name = 'Standard';
+WHERE u.username = 'cust_mahmud' AND s.status_name = 'Processing' AND m.name = 'Express';
 
 INSERT INTO orders (user_id, order_number, status_id, delivery_method_id, delivery_address, total_amount)
-SELECT u.user_id, 'ORD8', s.status_id, m.method_id, 'Addr8', 450.00
+SELECT u.user_id, 'ORD9', s.status_id, m.method_id, 'House #25, Road #12, Baridhara Diplomatic Zone, Dhaka-1212, Bangladesh, near Baridhara Park', 500.00
 FROM users u, order_statuses s, delivery_methods m
-WHERE u.username = 'cust2' AND s.status_name = 'Processing' AND m.name = 'Express';
+WHERE u.username = 'cust_sadia' AND s.status_name = 'Processing' AND m.name = 'Pickup';
 
 INSERT INTO orders (user_id, order_number, status_id, delivery_method_id, delivery_address, total_amount)
-SELECT u.user_id, 'ORD9', s.status_id, m.method_id, 'Addr9', 500.00
+SELECT u.user_id, 'ORD10', s.status_id, m.method_id, 'House #19, Road #7, Dhanmondi Residential Area, Dhaka-1205, Bangladesh, opposite Dhanmondi Lake Park', 550.00
 FROM users u, order_statuses s, delivery_methods m
-WHERE u.username = 'cust3' AND s.status_name = 'Processing' AND m.name = 'Pickup';
-
-INSERT INTO orders (user_id, order_number, status_id, delivery_method_id, delivery_address, total_amount)
-SELECT u.user_id, 'ORD10', s.status_id, m.method_id, 'Addr10', 550.00
-FROM users u, order_statuses s, delivery_methods m
-WHERE u.username = 'cust1' AND s.status_name = 'Processing' AND m.name = 'Standard';
+WHERE u.username = 'cust_fatima' AND s.status_name = 'Processing' AND m.name = 'Standard';
 
 COMMIT;
 
-
+-- Insert into order_items
 INSERT INTO order_items (order_id, plant_id, size_id, quantity, unit_price)
-SELECT o.order_id, p.plant_id, ps.size_id, 2,
-       (p.base_price + NVL(ps.price_adjustment,0))
+SELECT o.order_id, p.plant_id, ps.size_id, 2, (p.base_price + NVL(ps.price_adjustment, 0))
 FROM orders o
-JOIN plants p ON p.name = 'Plant1'
+JOIN plants p ON p.name = 'Neem Tree'
 JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Small'
 WHERE o.order_number = 'ORD1';
 
 INSERT INTO order_items (order_id, plant_id, size_id, quantity, unit_price)
-SELECT o.order_id, p.plant_id, ps.size_id, 3,
-       (p.base_price + NVL(ps.price_adjustment,0))
+SELECT o.order_id, p.plant_id, ps.size_id, 3, (p.base_price + NVL(ps.price_adjustment, 0))
 FROM orders o
-JOIN plants p ON p.name = 'Plant2'
+JOIN plants p ON p.name = 'Money Plant'
 JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Medium'
 WHERE o.order_number = 'ORD2';
 
 INSERT INTO order_items (order_id, plant_id, size_id, quantity, unit_price)
-SELECT o.order_id, p.plant_id, ps.size_id, 4,
-       (p.base_price + NVL(ps.price_adjustment,0))
+SELECT o.order_id, p.plant_id, ps.size_id, 4, (p.base_price + NVL(ps.price_adjustment, 0))
 FROM orders o
-JOIN plants p ON p.name = 'Plant3'
+JOIN plants p ON p.name = 'Aloe Vera'
 JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Small'
 WHERE o.order_number = 'ORD3';
 
 INSERT INTO order_items (order_id, plant_id, size_id, quantity, unit_price)
-SELECT o.order_id, p.plant_id, ps.size_id, 5,
-       (p.base_price + NVL(ps.price_adjustment,0))
+SELECT o.order_id, p.plant_id, ps.size_id, 5, (p.base_price + NVL(ps.price_adjustment, 0))
 FROM orders o
-JOIN plants p ON p.name = 'Plant4'
+JOIN plants p ON p.name = 'Marigold'
 JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Medium'
 WHERE o.order_number = 'ORD4';
 
 INSERT INTO order_items (order_id, plant_id, size_id, quantity, unit_price)
-SELECT o.order_id, p.plant_id, ps.size_id, 6,
-       (p.base_price + NVL(ps.price_adjustment,0))
+SELECT o.order_id, p.plant_id, ps.size_id, 6, (p.base_price + NVL(ps.price_adjustment, 0))
 FROM orders o
-JOIN plants p ON p.name = 'Plant5'
+JOIN plants p ON p.name = 'Tulsi'
 JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Small'
 WHERE o.order_number = 'ORD5';
 
 INSERT INTO order_items (order_id, plant_id, size_id, quantity, unit_price)
-SELECT o.order_id, p.plant_id, ps.size_id, 7,
-       (p.base_price + NVL(ps.price_adjustment,0))
+SELECT o.order_id, p.plant_id, ps.size_id, 7, (p.base_price + NVL(ps.price_adjustment, 0))
 FROM orders o
-JOIN plants p ON p.name = 'Plant6'
+JOIN plants p ON p.name = 'Mango Tree'
 JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Medium'
 WHERE o.order_number = 'ORD6';
 
 INSERT INTO order_items (order_id, plant_id, size_id, quantity, unit_price)
-SELECT o.order_id, p.plant_id, ps.size_id, 8,
-       (p.base_price + NVL(ps.price_adjustment,0))
+SELECT o.order_id, p.plant_id, ps.size_id, 8, (p.base_price + NVL(ps.price_adjustment, 0))
 FROM orders o
-JOIN plants p ON p.name = 'Plant7'
+JOIN plants p ON p.name = 'Bottle Gourd'
 JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Small'
 WHERE o.order_number = 'ORD7';
 
 INSERT INTO order_items (order_id, plant_id, size_id, quantity, unit_price)
-SELECT o.order_id, p.plant_id, ps.size_id, 9,
-       (p.base_price + NVL(ps.price_adjustment,0))
+SELECT o.order_id, p.plant_id, ps.size_id, 9, (p.base_price + NVL(ps.price_adjustment, 0))
 FROM orders o
-JOIN plants p ON p.name = 'Plant8'
+JOIN plants p ON p.name = 'Rose'
 JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Medium'
 WHERE o.order_number = 'ORD8';
 
 INSERT INTO order_items (order_id, plant_id, size_id, quantity, unit_price)
-SELECT o.order_id, p.plant_id, ps.size_id, 10,
-       (p.base_price + NVL(ps.price_adjustment,0))
+SELECT o.order_id, p.plant_id, ps.size_id, 10, (p.base_price + NVL(ps.price_adjustment, 0))
 FROM orders o
-JOIN plants p ON p.name = 'Plant9'
+JOIN plants p ON p.name = 'Cactus'
 JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Small'
 WHERE o.order_number = 'ORD9';
 
 INSERT INTO order_items (order_id, plant_id, size_id, quantity, unit_price)
-SELECT o.order_id, p.plant_id, ps.size_id, 11,
-       (p.base_price + NVL(ps.price_adjustment,0))
+SELECT o.order_id, p.plant_id, ps.size_id, 11, (p.base_price + NVL(ps.price_adjustment, 0))
 FROM orders o
-JOIN plants p ON p.name = 'Plant10'
+JOIN plants p ON p.name = 'Bamboo'
 JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Medium'
 WHERE o.order_number = 'ORD10';
 
 COMMIT;
 
+-- Insert into plant_features (more detailed)
+INSERT INTO plant_features (plant_id, feature_text)
+SELECT p.plant_id, 'Leaves with potent insect-repellent properties, used in traditional Bangladeshi medicine for skin ailments and as a natural pesticide in organic gardening.' FROM plants p WHERE p.name = 'Neem Tree';
 
 INSERT INTO plant_features (plant_id, feature_text)
-SELECT p.plant_id, 'Feature1' FROM plants p WHERE p.name = 'Plant1';
-INSERT INTO plant_features (plant_id, feature_text)
-SELECT p.plant_id, 'Feature2' FROM plants p WHERE p.name = 'Plant2';
-INSERT INTO plant_features (plant_id, feature_text)
-SELECT p.plant_id, 'Feature3' FROM plants p WHERE p.name = 'Plant3';
-INSERT INTO plant_features (plant_id, feature_text)
-SELECT p.plant_id, 'Feature4' FROM plants p WHERE p.name = 'Plant4';
-INSERT INTO plant_features (plant_id, feature_text)
-SELECT p.plant_id, 'Feature5' FROM plants p WHERE p.name = 'Plant5';
-INSERT INTO plant_features (plant_id, feature_text)
-SELECT p.plant_id, 'Feature6' FROM plants p WHERE p.name = 'Plant6';
-INSERT INTO plant_features (plant_id, feature_text)
-SELECT p.plant_id, 'Feature7' FROM plants p WHERE p.name = 'Plant7';
-INSERT INTO plant_features (plant_id, feature_text)
-SELECT p.plant_id, 'Feature8' FROM plants p WHERE p.name = 'Plant8';
-INSERT INTO plant_features (plant_id, feature_text)
-SELECT p.plant_id, 'Feature9' FROM plants p WHERE p.name = 'Plant9';
-INSERT INTO plant_features (plant_id, feature_text)
-SELECT p.plant_id, 'Feature10' FROM plants p WHERE p.name = 'Plant10';
+SELECT p.plant_id, 'Air-purifying plant with heart-shaped, variegated leaves, believed to attract prosperity and enhance indoor aesthetics in Bangladeshi homes.' FROM plants p WHERE p.name = 'Money Plant';
 
+INSERT INTO plant_features (plant_id, feature_text)
+SELECT p.plant_id, 'Thick, fleshy leaves containing soothing gel, widely used in Bangladesh for treating burns, skin irritations, and as a natural moisturizer.' FROM plants p WHERE p.name = 'Aloe Vera';
+
+INSERT INTO plant_features (plant_id, feature_text)
+SELECT p.plant_id, 'Bright yellow and orange blooms that attract pollinators, commonly used in Bangladeshi festivals like Pohela Boishakh for decorations and garlands.' FROM plants p WHERE p.name = 'Marigold';
+
+INSERT INTO plant_features (plant_id, feature_text)
+SELECT p.plant_id, 'Aromatic herb with medicinal properties, revered in Bangladesh for its use in herbal teas, stress relief, and spiritual rituals in households.' FROM plants p WHERE p.name = 'Tulsi';
+
+INSERT INTO plant_features (plant_id, feature_text)
+SELECT p.plant_id, 'Produces sweet, juicy mangoes during summer, a staple fruit in Bangladesh, ideal for home orchards and adding tropical charm to gardens.' FROM plants p WHERE p.name = 'Mango Tree';
+
+INSERT INTO plant_features (plant_id, feature_text)
+SELECT p.plant_id, 'Climbing vine yielding nutritious gourds, a popular vegetable in Bangladeshi cuisine, perfect for rooftop or backyard vegetable gardens.' FROM plants p WHERE p.name = 'Bottle Gourd';
+
+INSERT INTO plant_features (plant_id, feature_text)
+SELECT p.plant_id, 'Fragrant, colorful blooms in various shades, ideal for gifting, garden aesthetics, or special occasions like weddings and Eid in Bangladesh.' FROM plants p WHERE p.name = 'Rose';
+
+INSERT INTO plant_features (plant_id, feature_text)
+SELECT p.plant_id, 'Drought-resistant with unique, sculptural shapes, perfect for low-maintenance decor in urban Bangladeshi apartments or offices.' FROM plants p WHERE p.name = 'Cactus';
+
+INSERT INTO plant_features (plant_id, feature_text)
+SELECT p.plant_id, 'Fast-growing, lush green stalks used for privacy screens, landscaping, or traditional crafts in Bangladesh, adding a tropical vibe to gardens.' FROM plants p WHERE p.name = 'Bamboo';
+
+-- Insert into plant_care_tips (more detailed)
+INSERT INTO plant_care_tips (plant_id, tip_text)
+SELECT p.plant_id, 'Water weekly during dry seasons, ensuring deep soil penetration. Plant in full sunlight and prune annually to maintain shape and encourage healthy growth in Bangladesh’s warm climate.' FROM plants p WHERE p.name = 'Neem Tree';
 
 INSERT INTO plant_care_tips (plant_id, tip_text)
-SELECT p.plant_id, 'Tip1' FROM plants p WHERE p.name = 'Plant1';
-INSERT INTO plant_care_tips (plant_id, tip_text)
-SELECT p.plant_id, 'Tip2' FROM plants p WHERE p.name = 'Plant2';
-INSERT INTO plant_care_tips (plant_id, tip_text)
-SELECT p.plant_id, 'Tip3' FROM plants p WHERE p.name = 'Plant3';
-INSERT INTO plant_care_tips (plant_id, tip_text)
-SELECT p.plant_id, 'Tip4' FROM plants p WHERE p.name = 'Plant4';
-INSERT INTO plant_care_tips (plant_id, tip_text)
-SELECT p.plant_id, 'Tip5' FROM plants p WHERE p.name = 'Plant5';
-INSERT INTO plant_care_tips (plant_id, tip_text)
-SELECT p.plant_id, 'Tip6' FROM plants p WHERE p.name = 'Plant6';
-INSERT INTO plant_care_tips (plant_id, tip_text)
-SELECT p.plant_id, 'Tip7' FROM plants p WHERE p.name = 'Plant7';
-INSERT INTO plant_care_tips (plant_id, tip_text)
-SELECT p.plant_id, 'Tip8' FROM plants p WHERE p.name = 'Plant8';
-INSERT INTO plant_care_tips (plant_id, tip_text)
-SELECT p.plant_id, 'Tip9' FROM plants p WHERE p.name = 'Plant9';
-INSERT INTO plant_care_tips (plant_id, tip_text)
-SELECT p.plant_id, 'Tip10' FROM plants p WHERE p.name = 'Plant10';
+SELECT p.plant_id, 'Place in indirect sunlight to prevent leaf burn, water sparingly every 7-10 days, and use well-drained soil to avoid root rot, ideal for indoor settings in Dhaka apartments.' FROM plants p WHERE p.name = 'Money Plant';
 
+INSERT INTO plant_care_tips (plant_id, tip_text)
+SELECT p.plant_id, 'Position in bright, direct sunlight on balconies or rooftops, water every 10-14 days, and ensure sandy, well-drained soil to promote healthy growth in urban Bangladesh.' FROM plants p WHERE p.name = 'Aloe Vera';
 
+INSERT INTO plant_care_tips (plant_id, tip_text)
+SELECT p.plant_id, 'Water regularly every 3-4 days, deadhead spent blooms to encourage continuous flowering, and plant in fertile soil with full sun exposure for vibrant marigolds in Bangladeshi gardens.' FROM plants p WHERE p.name = 'Marigold';
+
+INSERT INTO plant_care_tips (plant_id, tip_text)
+SELECT p.plant_id, 'Water daily in the morning, place in partial shade to avoid scorching, and use organic compost to enhance leaf growth, perfect for Bangladeshi home herbal gardens.' FROM plants p WHERE p.name = 'Tulsi';
+
+INSERT INTO plant_care_tips (plant_id, tip_text)
+SELECT p.plant_id, 'Water deeply every 5-7 days during dry seasons, prune annually to remove dead branches, and plant in sunny, spacious areas to support fruit production in Bangladeshi orchards.' FROM plants p WHERE p.name = 'Mango Tree';
+
+INSERT INTO plant_care_tips (plant_id, tip_text)
+SELECT p.plant_id, 'Provide trellis or support for climbing vines, water consistently every 3-4 days, and use nutrient-rich soil to maximize gourd yield in Bangladeshi rooftop gardens.' FROM plants p WHERE p.name = 'Bottle Gourd';
+
+INSERT INTO plant_care_tips (plant_id, tip_text)
+SELECT p.plant_id, 'Water moderately every 4-5 days, prune regularly to remove dead blooms, and plant in well-drained, fertile soil with partial sun for continuous flowering in Bangladesh.' FROM plants p WHERE p.name = 'Rose';
+
+INSERT INTO plant_care_tips (plant_id, tip_text)
+SELECT p.plant_id, 'Water sparingly every 2-3 weeks, ensure well-drained, sandy soil, and place in bright sunlight to maintain health, ideal for low-maintenance urban decor in Bangladesh.' FROM plants p WHERE p.name = 'Cactus';
+
+INSERT INTO plant_care_tips (plant_id, tip_text)
+SELECT p.plant_id, 'Water weekly, plant in moist, well-drained soil, and provide partial shade to prevent drying. Regularly check for pests to maintain healthy bamboo in Bangladeshi gardens.' FROM plants p WHERE p.name = 'Bamboo';
+
+-- Insert into order_assignments
 INSERT INTO order_assignments (order_id, agent_id)
 SELECT o.order_id, da.agent_id
 FROM orders o
-JOIN users au ON au.username = 'agent1'
+JOIN users au ON au.username = 'agent_kamrul'
 JOIN delivery_agents da ON da.user_id = au.user_id
 WHERE o.order_number = 'ORD1';
+
 INSERT INTO order_assignments (order_id, agent_id)
 SELECT o.order_id, da.agent_id
 FROM orders o
-JOIN users au ON au.username = 'agent1'
+JOIN users au ON au.username = 'agent_kamrul'
 JOIN delivery_agents da ON da.user_id = au.user_id
 WHERE o.order_number = 'ORD2';
+
 INSERT INTO order_assignments (order_id, agent_id)
 SELECT o.order_id, da.agent_id
 FROM orders o
-JOIN users au ON au.username = 'agent2'
+JOIN users au ON au.username = 'agent_sumon'
 JOIN delivery_agents da ON da.user_id = au.user_id
 WHERE o.order_number = 'ORD3';
+
 INSERT INTO order_assignments (order_id, agent_id)
 SELECT o.order_id, da.agent_id
 FROM orders o
-JOIN users au ON au.username = 'agent2'
+JOIN users au ON au.username = 'agent_sumon'
 JOIN delivery_agents da ON da.user_id = au.user_id
 WHERE o.order_number = 'ORD4';
+
 INSERT INTO order_assignments (order_id, agent_id)
 SELECT o.order_id, da.agent_id
 FROM orders o
-JOIN users au ON au.username = 'agent3'
+JOIN users au ON au.username = 'agent_ayesha'
 JOIN delivery_agents da ON da.user_id = au.user_id
 WHERE o.order_number = 'ORD5';
+
 INSERT INTO order_assignments (order_id, agent_id)
 SELECT o.order_id, da.agent_id
 FROM orders o
-JOIN users au ON au.username = 'agent3'
+JOIN users au ON au.username = 'agent_ayesha'
 JOIN delivery_agents da ON da.user_id = au.user_id
 WHERE o.order_number = 'ORD6';
+
 INSERT INTO order_assignments (order_id, agent_id)
 SELECT o.order_id, da.agent_id
 FROM orders o
-JOIN users au ON au.username = 'agent1'
+JOIN users au ON au.username = 'agent_kamrul'
 JOIN delivery_agents da ON da.user_id = au.user_id
 WHERE o.order_number = 'ORD7';
+
 INSERT INTO order_assignments (order_id, agent_id)
 SELECT o.order_id, da.agent_id
 FROM orders o
-JOIN users au ON au.username = 'agent2'
+JOIN users au ON au.username = 'agent_sumon'
 JOIN delivery_agents da ON da.user_id = au.user_id
 WHERE o.order_number = 'ORD8';
+
 INSERT INTO order_assignments (order_id, agent_id)
 SELECT o.order_id, da.agent_id
 FROM orders o
-JOIN users au ON au.username = 'agent3'
+JOIN users au ON au.username = 'agent_ayesha'
 JOIN delivery_agents da ON da.user_id = au.user_id
 WHERE o.order_number = 'ORD9';
+
 INSERT INTO order_assignments (order_id, agent_id)
 SELECT o.order_id, da.agent_id
 FROM orders o
-JOIN users au ON au.username = 'agent1'
+JOIN users au ON au.username = 'agent_kamrul'
 JOIN delivery_agents da ON da.user_id = au.user_id
 WHERE o.order_number = 'ORD10';
 
-
---INSERT INTO favorites (user_id, plant_id)
---SELECT u.user_id, p.plant_id FROM users u JOIN plants p ON p.name = 'Plant1' WHERE u.username = 'cust1';
---INSERT INTO favorites (user_id, plant_id)
---SELECT u.user_id, p.plant_id FROM users u JOIN plants p ON p.name = 'Plant2' WHERE u.username = 'cust1';
---INSERT INTO favorites (user_id, plant_id)
---SELECT u.user_id, p.plant_id FROM users u JOIN plants p ON p.name = 'Plant3' WHERE u.username = 'cust2';
---INSERT INTO favorites (user_id, plant_id)
---SELECT u.user_id, p.plant_id FROM users u JOIN plants p ON p.name = 'Plant4' WHERE u.username = 'cust2';
---INSERT INTO favorites (user_id, plant_id)
---SELECT u.user_id, p.plant_id FROM users u JOIN plants p ON p.name = 'Plant5' WHERE u.username = 'cust3';
---INSERT INTO favorites (user_id, plant_id)
---SELECT u.user_id, p.plant_id FROM users u JOIN plants p ON p.name = 'Plant6' WHERE u.username = 'cust3';
---INSERT INTO favorites (user_id, plant_id)
---SELECT u.user_id, p.plant_id FROM users u JOIN plants p ON p.name = 'Plant7' WHERE u.username = 'cust1';
---INSERT INTO favorites (user_id, plant_id)
---SELECT u.user_id, p.plant_id FROM users u JOIN plants p ON p.name = 'Plant8' WHERE u.username = 'cust2';
---INSERT INTO favorites (user_id, plant_id)
---SELECT u.user_id, p.plant_id FROM users u JOIN plants p ON p.name = 'Plant9' WHERE u.username = 'cust3';
---INSERT INTO favorites (user_id, plant_id)
---SELECT u.user_id, p.plant_id FROM users u JOIN plants p ON p.name = 'Plant10' WHERE u.username = 'cust1';
-select * from users;
+-- Insert into reviews (more detailed)
+INSERT INTO reviews (user_id, plant_id, rating, review_text)
+SELECT u.user_id, p.plant_id, 5, 'This neem tree arrived in excellent condition and has already started thriving in my backyard in Dhanmondi. The leaves are lush, and it’s perfect for keeping insects at bay during the monsoon season. Highly recommend for anyone with a spacious garden!' FROM users u JOIN plants p ON p.name = 'Neem Tree' WHERE u.username = 'cust_fatima';
 
 INSERT INTO reviews (user_id, plant_id, rating, review_text)
-SELECT u.user_id, p.plant_id, 5, 'Great!' FROM users u JOIN plants p ON p.name='Plant1' WHERE u.username='cust1';
-INSERT INTO reviews (user_id, plant_id, rating, review_text)
-SELECT u.user_id, p.plant_id, 4, 'Good' FROM users u JOIN plants p ON p.name='Plant2' WHERE u.username='cust1';
-INSERT INTO reviews (user_id, plant_id, rating, review_text)
-SELECT u.user_id, p.plant_id, 3, 'Ok' FROM users u JOIN plants p ON p.name='Plant3' WHERE u.username='cust2';
-INSERT INTO reviews (user_id, plant_id, rating, review_text)
-SELECT u.user_id, p.plant_id, 5, 'Excellent' FROM users u JOIN plants p ON p.name='Plant4' WHERE u.username='cust2';
-INSERT INTO reviews (user_id, plant_id, rating, review_text)
-SELECT u.user_id, p.plant_id, 4, 'Nice' FROM users u JOIN plants p ON p.name='Plant5' WHERE u.username='cust3';
-INSERT INTO reviews (user_id, plant_id, rating, review_text)
-SELECT u.user_id, p.plant_id, 5, 'Perfect' FROM users u JOIN plants p ON p.name='Plant6' WHERE u.username='cust3';
-INSERT INTO reviews (user_id, plant_id, rating, review_text)
-SELECT u.user_id, p.plant_id, 2, 'Poor' FROM users u JOIN plants p ON p.name='Plant7' WHERE u.username='cust1';
-INSERT INTO reviews (user_id, plant_id, rating, review_text)
-SELECT u.user_id, p.plant_id, 5, 'Awesome' FROM users u JOIN plants p ON p.name='Plant8' WHERE u.username='cust2';
-INSERT INTO reviews (user_id, plant_id, rating, review_text)
-SELECT u.user_id, p.plant_id, 4, 'Fine' FROM users u JOIN plants p ON p.name='Plant9' WHERE u.username='cust3';
-INSERT INTO reviews (user_id, plant_id, rating, review_text)
-SELECT u.user_id, p.plant_id, 5, 'Super' FROM users u JOIN plants p ON p.name='Plant10' WHERE u.username='cust1';
+SELECT u.user_id, p.plant_id, 4, 'The money plant looks stunning in my living room in Dhaka. Its variegated leaves add a refreshing vibe to my apartment. It was slightly droopy on arrival, but after a week of care, it’s flourishing. Great for indoor decor!' FROM users u JOIN plants p ON p.name = 'Money Plant' WHERE u.username = 'cust_fatima';
 
+INSERT INTO reviews (user_id, plant_id, rating, review_text)
+SELECT u.user_id, p.plant_id, 3, 'The aloe vera plant is decent, but it arrived with a few wilted leaves, likely due to transport. I’ve placed it on my Gulshan balcony, and it’s recovering slowly. The gel is useful for skincare, but I expected better packaging.' FROM users u JOIN plants p ON p.name = 'Aloe Vera' WHERE u.username = 'cust_mahmud';
 
+INSERT INTO reviews (user_id, plant_id, rating, review_text)
+SELECT u.user_id, p.plant_id, 5, 'These marigolds are absolutely vibrant! I used them to decorate my home for Pohela Boishakh, and they’ve been blooming non-stop. Perfect for my Baridhara garden, and they attract bees, which is great for pollination!' FROM users u JOIN plants p ON p.name = 'Marigold' WHERE u.username = 'cust_mahmud';
+
+INSERT INTO reviews (user_id, plant_id, rating, review_text)
+SELECT u.user_id, p.plant_id, 4, 'The tulsi plant is healthy and smells amazing. I keep it on my balcony in Baridhara for daily use in tea and puja. It’s growing well, though I wish it came with more detailed care instructions for beginners.' FROM users u JOIN plants p ON p.name = 'Tulsi' WHERE u.username = 'cust_sadia';
+
+INSERT INTO reviews (user_id, plant_id, rating, review_text)
+SELECT u.user_id, p.plant_id, 5, 'The mango tree sapling is a fantastic addition to my garden. It arrived in great shape and is already showing new leaves. I’m excited to see it bear fruit in a few years. Perfect for anyone in Bangladesh dreaming of homegrown mangoes!' FROM users u JOIN plants p ON p.name = 'Mango Tree' WHERE u.username = 'cust_sadia';
+
+INSERT INTO reviews (user_id, plant_id, rating, review_text)
+SELECT u.user_id, p.plant_id, 2, 'The bottle gourd plant arrived with some damaged vines, which was disappointing. I’ve set it up on my Dhanmondi rooftop with a trellis, but growth has been slow. The seller was responsive, but I hope for better quality control in the future.' FROM users u JOIN plants p ON p.name = 'Bottle Gourd' WHERE u.username = 'cust_fatima';
+
+INSERT INTO reviews (user_id, plant_id, rating, review_text)
+SELECT u.user_id, p.plant_id, 5, 'These roses are simply stunning! The red blooms are vibrant and fragrant, perfect for my Gulshan garden. They’ve been blooming consistently, and I’ve received compliments from guests. A must-have for flower lovers in Bangladesh!' FROM users u JOIN plants p ON p.name = 'Rose' WHERE u.username = 'cust_mahmud';
+
+INSERT INTO reviews (user_id, plant_id, rating, review_text)
+SELECT u.user_id, p.plant_id, 4, 'The cactus is perfect for my busy lifestyle in Dhaka. It requires almost no care and looks great on my office desk. One small spine was broken on arrival, but it’s still a great addition to my collection.' FROM users u JOIN plants p ON p.name = 'Cactus' WHERE u.username = 'cust_sadia';
+
+INSERT INTO reviews (user_id, plant_id, rating, review_text)
+SELECT u.user_id, p.plant_id, 5, 'The bamboo plant has transformed my backyard in Dhanmondi into a serene oasis. It’s growing fast and provides excellent privacy. The delivery was prompt, and the plant was in perfect condition. Highly recommend for landscaping!' FROM users u JOIN plants p ON p.name = 'Bamboo' WHERE u.username = 'cust_fatima';
+
+-- Insert into carts
 INSERT INTO carts (user_id, plant_id, size_id, quantity)
 SELECT u.user_id, p.plant_id, ps.size_id, 1
-FROM users u JOIN plants p ON p.name='Plant1' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name='Small'
-WHERE u.username='cust1';
+FROM users u JOIN plants p ON p.name = 'Neem Tree' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Small'
+WHERE u.username = 'cust_fatima';
+
 INSERT INTO carts (user_id, plant_id, size_id, quantity)
 SELECT u.user_id, p.plant_id, ps.size_id, 2
-FROM users u JOIN plants p ON p.name='Plant2' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name='Medium'
-WHERE u.username='cust1';
+FROM users u JOIN plants p ON p.name = 'Money Plant' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Medium'
+WHERE u.username = 'cust_fatima';
+
 INSERT INTO carts (user_id, plant_id, size_id, quantity)
 SELECT u.user_id, p.plant_id, ps.size_id, 3
-FROM users u JOIN plants p ON p.name='Plant3' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name='Small'
-WHERE u.username='cust2';
+FROM users u JOIN plants p ON p.name = 'Aloe Vera' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Small'
+WHERE u.username = 'cust_mahmud';
+
 INSERT INTO carts (user_id, plant_id, size_id, quantity)
 SELECT u.user_id, p.plant_id, ps.size_id, 4
-FROM users u JOIN plants p ON p.name='Plant4' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name='Medium'
-WHERE u.username='cust2';
+FROM users u JOIN plants p ON p.name = 'Marigold' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Medium'
+WHERE u.username = 'cust_mahmud';
+
 INSERT INTO carts (user_id, plant_id, size_id, quantity)
 SELECT u.user_id, p.plant_id, ps.size_id, 5
-FROM users u JOIN plants p ON p.name='Plant5' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name='Small'
-WHERE u.username='cust3';
+FROM users u JOIN plants p ON p.name = 'Tulsi' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Small'
+WHERE u.username = 'cust_sadia';
+
 INSERT INTO carts (user_id, plant_id, size_id, quantity)
 SELECT u.user_id, p.plant_id, ps.size_id, 6
-FROM users u JOIN plants p ON p.name='Plant6' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name='Medium'
-WHERE u.username='cust3';
+FROM users u JOIN plants p ON p.name = 'Mango Tree' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Medium'
+WHERE u.username = 'cust_sadia';
+
 INSERT INTO carts (user_id, plant_id, size_id, quantity)
 SELECT u.user_id, p.plant_id, ps.size_id, 7
-FROM users u JOIN plants p ON p.name='Plant7' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name='Small'
-WHERE u.username='cust1';
+FROM users u JOIN plants p ON p.name = 'Bottle Gourd' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Small'
+WHERE u.username = 'cust_fatima';
+
 INSERT INTO carts (user_id, plant_id, size_id, quantity)
 SELECT u.user_id, p.plant_id, ps.size_id, 8
-FROM users u JOIN plants p ON p.name='Plant8' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name='Medium'
-WHERE u.username='cust2';
+FROM users u JOIN plants p ON p.name = 'Rose' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Medium'
+WHERE u.username = 'cust_mahmud';
+
 INSERT INTO carts (user_id, plant_id, size_id, quantity)
 SELECT u.user_id, p.plant_id, ps.size_id, 9
-FROM users u JOIN plants p ON p.name='Plant9' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name='Small'
-WHERE u.username='cust3';
+FROM users u JOIN plants p ON p.name = 'Cactus' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Small'
+WHERE u.username = 'cust_sadia';
+
 INSERT INTO carts (user_id, plant_id, size_id, quantity)
 SELECT u.user_id, p.plant_id, ps.size_id, 10
-FROM users u JOIN plants p ON p.name='Plant10' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name='Medium'
-WHERE u.username='cust1';
+FROM users u JOIN plants p ON p.name = 'Bamboo' JOIN plant_sizes ps ON ps.plant_id = p.plant_id AND ps.size_name = 'Medium'
+WHERE u.username = 'cust_fatima';
 
+-- Insert into delivery_confirmations
+INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
+SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username = 'agent_kamrul' JOIN delivery_agents da ON da.user_id = au.user_id WHERE o.order_number = 'ORD1';
 
 INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
-SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username='agent1' JOIN delivery_agents da ON da.user_id=au.user_id WHERE o.order_number='ORD1';
-INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
-SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username='agent1' JOIN delivery_agents da ON da.user_id=au.user_id WHERE o.order_number='ORD2';
-INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
-SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username='agent2' JOIN delivery_agents da ON da.user_id=au.user_id WHERE o.order_number='ORD3';
-INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
-SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username='agent2' JOIN delivery_agents da ON da.user_id=au.user_id WHERE o.order_number='ORD4';
-INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
-SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username='agent3' JOIN delivery_agents da ON da.user_id=au.user_id WHERE o.order_number='ORD5';
-INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
-SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username='agent3' JOIN delivery_agents da ON da.user_id=au.user_id WHERE o.order_number='ORD6';
-INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
-SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username='agent1' JOIN delivery_agents da ON da.user_id=au.user_id WHERE o.order_number='ORD7';
-INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
-SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username='agent2' JOIN delivery_agents da ON da.user_id=au.user_id WHERE o.order_number='ORD8';
-INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
-SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username='agent3' JOIN delivery_agents da ON da.user_id=au.user_id WHERE o.order_number='ORD9';
-INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
-SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username='agent1' JOIN delivery_agents da ON da.user_id=au.user_id WHERE o.order_number='ORD10';
+SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username = 'agent_kamrul' JOIN delivery_agents da ON da.user_id = au.user_id WHERE o.order_number = 'ORD2';
 
+INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
+SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username = 'agent_sumon' JOIN delivery_agents da ON da.user_id = au.user_id WHERE o.order_number = 'ORD3';
+
+INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
+SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username = 'agent_sumon' JOIN delivery_agents da ON da.user_id = au.user_id WHERE o.order_number = 'ORD4';
+
+INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
+SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username = 'agent_ayesha' JOIN delivery_agents da ON da.user_id = au.user_id WHERE o.order_number = 'ORD5';
+
+INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
+SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username = 'agent_ayesha' JOIN delivery_agents da ON da.user_id = au.user_id WHERE o.order_number = 'ORD6';
+
+INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
+SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username = 'agent_kamrul' JOIN delivery_agents da ON da.user_id = au.user_id WHERE o.order_number = 'ORD7';
+
+INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
+SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username = 'agent_sumon' JOIN delivery_agents da ON da.user_id = au.user_id WHERE o.order_number = 'ORD8';
+
+INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
+SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username = 'agent_ayesha' JOIN delivery_agents da ON da.user_id = au.user_id WHERE o.order_number = 'ORD9';
+
+INSERT INTO delivery_confirmations (order_id, user_id, agent_id)
+SELECT o.order_id, o.user_id, da.agent_id FROM orders o JOIN users au ON au.username = 'agent_kamrul' JOIN delivery_agents da ON da.user_id = au.user_id WHERE o.order_number = 'ORD10';
+
+-- Insert into delivery_slots
+INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
+SELECT da.agent_id, SYSDATE, 'morning' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username = 'agent_kamrul';
 
 INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
-SELECT da.agent_id, SYSDATE, 'morning' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username='agent1';
-INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
-SELECT da.agent_id, SYSDATE, 'afternoon' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username='agent1';
-INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
-SELECT da.agent_id, SYSDATE, 'morning' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username='agent2';
-INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
-SELECT da.agent_id, SYSDATE, 'afternoon' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username='agent2';
-INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
-SELECT da.agent_id, SYSDATE, 'morning' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username='agent3';
-INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
-SELECT da.agent_id, SYSDATE, 'afternoon' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username='agent3';
-INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
-SELECT da.agent_id, SYSDATE + 1, 'morning' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username='agent1';
-INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
-SELECT da.agent_id, SYSDATE + 1, 'morning' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username='agent2';
-INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
-SELECT da.agent_id, SYSDATE + 1, 'morning' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username='agent3';
-INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
-SELECT da.agent_id, SYSDATE + 2, 'morning' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username='agent1';
+SELECT da.agent_id, SYSDATE, 'afternoon' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username = 'agent_kamrul';
 
+INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
+SELECT da.agent_id, SYSDATE, 'morning' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username = 'agent_sumon';
+
+INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
+SELECT da.agent_id, SYSDATE, 'afternoon' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username = 'agent_sumon';
+
+INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
+SELECT da.agent_id, SYSDATE, 'morning' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username = 'agent_ayesha';
+
+INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
+SELECT da.agent_id, SYSDATE, 'afternoon' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username = 'agent_ayesha';
+
+INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
+SELECT da.agent_id, SYSDATE + 1, 'morning' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username = 'agent_kamrul';
+
+INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
+SELECT da.agent_id, SYSDATE + 1, 'morning' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username = 'agent_sumon';
+
+INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
+SELECT da.agent_id, SYSDATE + 1, 'morning' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username = 'agent_ayesha';
+
+INSERT INTO delivery_slots (agent_id, slot_date, slot_time)
+SELECT da.agent_id, SYSDATE + 2, 'morning' FROM users u JOIN delivery_agents da ON da.user_id = u.user_id WHERE u.username = 'agent_kamrul';
+
+-- Insert into activity_log
+INSERT INTO activity_log (user_id, activity_type, activity_details)
+SELECT u.user_id, 'login', 'User successfully logged into the platform from Dhanmondi, Dhaka.' FROM users u WHERE u.username = 'cust_fatima';
 
 INSERT INTO activity_log (user_id, activity_type, activity_details)
-SELECT u.user_id, 'login', 'Logged in' FROM users u WHERE u.username='cust1';
-INSERT INTO activity_log (user_id, activity_type, activity_details)
-SELECT u.user_id, 'order', 'Placed order' FROM users u WHERE u.username='cust1';
-INSERT INTO activity_log (user_id, activity_type, activity_details)
-SELECT u.user_id, 'login', 'Logged in' FROM users u WHERE u.username='cust2';
-INSERT INTO activity_log (user_id, activity_type, activity_details)
-SELECT u.user_id, 'order', 'Placed order' FROM users u WHERE u.username='cust2';
-INSERT INTO activity_log (user_id, activity_type, activity_details)
-SELECT u.user_id, 'login', 'Logged in' FROM users u WHERE u.username='cust3';
-INSERT INTO activity_log (user_id, activity_type, activity_details)
-SELECT u.user_id, 'order', 'Placed order' FROM users u WHERE u.username='cust3';
-INSERT INTO activity_log (user_id, activity_type, activity_details)
-SELECT u.user_id, 'add_plant', 'Added plant' FROM users u WHERE u.username='seller1';
-INSERT INTO activity_log (user_id, activity_type, activity_details)
-SELECT u.user_id, 'add_plant', 'Added plant' FROM users u WHERE u.username='seller2';
-INSERT INTO activity_log (user_id, activity_type, activity_details)
-SELECT u.user_id, 'add_plant', 'Added plant' FROM users u WHERE u.username='seller3';
-INSERT INTO activity_log (user_id, activity_type, activity_details)
-SELECT u.user_id, 'admin_action', 'Admin action' FROM users u WHERE u.username='admin1';
+SELECT u.user_id, 'order', 'User placed an order for multiple plants with standard delivery to Dhanmondi.' FROM users u WHERE u.username = 'cust_fatima';
 
+INSERT INTO activity_log (user_id, activity_type, activity_details)
+SELECT u.user_id, 'login', 'User successfully logged into the platform from Gulshan, Dhaka.' FROM users u WHERE u.username = 'cust_mahmud';
+
+INSERT INTO activity_log (user_id, activity_type, activity_details)
+SELECT u.user_id, 'order', 'User placed an order for plants with express delivery to Gulshan.' FROM users u WHERE u.username = 'cust_mahmud';
+
+INSERT INTO activity_log (user_id, activity_type, activity_details)
+SELECT u.user_id, 'login', 'User successfully logged into the platform from Baridhara, Dhaka.' FROM users u WHERE u.username = 'cust_sadia';
+
+INSERT INTO activity_log (user_id, activity_type, activity_details)
+SELECT u.user_id, 'order', 'User placed an order for plants with pickup option from Baridhara.' FROM users u WHERE u.username = 'cust_sadia';
+
+INSERT INTO activity_log (user_id, activity_type, activity_details)
+SELECT u.user_id, 'add_plant', 'Seller added a new batch of neem trees and bottle gourds to the inventory from Uttara.' FROM users u WHERE u.username = 'seller_tanvir';
+
+INSERT INTO activity_log (user_id, activity_type, activity_details)
+SELECT u.user_id, 'add_plant', 'Seller added a new batch of marigolds and roses to the inventory from Khilkhet.' FROM users u WHERE u.username = 'seller_nusrat';
+
+INSERT INTO activity_log (user_id, activity_type, activity_details)
+SELECT u.user_id, 'add_plant', 'Seller added a new batch of tulsi and cacti to the inventory from Mirpur.' FROM users u WHERE u.username = 'seller_arif';
+
+INSERT INTO activity_log (user_id, activity_type, activity_details)
+SELECT u.user_id, 'admin_action', 'Admin performed system maintenance and updated discount settings from Banani.' FROM users u WHERE u.username = 'admin_raihan';
+
+-- Insert into low_stock_alerts
+INSERT INTO low_stock_alerts (plant_id, current_stock)
+SELECT p.plant_id, 5 FROM plants p WHERE p.name = 'Neem Tree';
 
 INSERT INTO low_stock_alerts (plant_id, current_stock)
-SELECT p.plant_id, 5 FROM plants p WHERE p.name='Plant1';
+SELECT p.plant_id, 6 FROM plants p WHERE p.name = 'Money Plant';
+
 INSERT INTO low_stock_alerts (plant_id, current_stock)
-SELECT p.plant_id, 6 FROM plants p WHERE p.name='Plant2';
+SELECT p.plant_id, 7 FROM plants p WHERE p.name = 'Aloe Vera';
+
 INSERT INTO low_stock_alerts (plant_id, current_stock)
-SELECT p.plant_id, 7 FROM plants p WHERE p.name='Plant3';
+SELECT p.plant_id, 8 FROM plants p WHERE p.name = 'Marigold';
+
 INSERT INTO low_stock_alerts (plant_id, current_stock)
-SELECT p.plant_id, 8 FROM plants p WHERE p.name='Plant4';
+SELECT p.plant_id, 9 FROM plants p WHERE p.name = 'Tulsi';
+
 INSERT INTO low_stock_alerts (plant_id, current_stock)
-SELECT p.plant_id, 9 FROM plants p WHERE p.name='Plant5';
+SELECT p.plant_id, 4 FROM plants p WHERE p.name = 'Mango Tree';
+
 INSERT INTO low_stock_alerts (plant_id, current_stock)
-SELECT p.plant_id, 4 FROM plants p WHERE p.name='Plant6';
+SELECT p.plant_id, 3 FROM plants p WHERE p.name = 'Bottle Gourd';
+
 INSERT INTO low_stock_alerts (plant_id, current_stock)
-SELECT p.plant_id, 3 FROM plants p WHERE p.name='Plant7';
+SELECT p.plant_id, 2 FROM plants p WHERE p.name = 'Rose';
+
 INSERT INTO low_stock_alerts (plant_id, current_stock)
-SELECT p.plant_id, 2 FROM plants p WHERE p.name='Plant8';
+SELECT p.plant_id, 1 FROM plants p WHERE p.name = 'Cactus';
+
 INSERT INTO low_stock_alerts (plant_id, current_stock)
-SELECT p.plant_id, 1 FROM plants p WHERE p.name='Plant9';
-INSERT INTO low_stock_alerts (plant_id, current_stock)
-SELECT p.plant_id, 0 FROM plants p WHERE p.name='Plant10';
+SELECT p.plant_id, 0 FROM plants p WHERE p.name = 'Bamboo';
 
 COMMIT;
 
@@ -5132,4 +5570,3 @@ END;
 SELECT review_id, user_id, plant_id, order_id, rating, DBMS_LOB.SUBSTR(review_text, 1000, 1) AS review_text, review_date, is_approved
 FROM reviews
 WHERE user_id = 325 AND plant_id = 331 AND order_id = 331;
-

@@ -12,7 +12,13 @@ def top_categories(request):
         out_cursor.close()
 
     categories = [
-        {"category_id": r[0], "name": r[1], "slug": r[2], "plant_count": r[3]}
+        {
+            "category_id": r[0], 
+            "name": r[1], 
+            "slug": r[2], 
+            "image_url": r[3] if len(r) > 3 else None,
+            "plant_count": r[4] if len(r) > 4 else 0
+        }
         for r in rows
     ]
     return JsonResponse({"categories": categories}, safe=False)
@@ -28,6 +34,14 @@ def top_plants(request):
         out_cursor.close()
 
     results = [dict(zip(desc, row)) for row in rows]
+    
+    # Ensure image field is properly named
+    for plant in results:
+        if 'primary_image' in plant and 'image' not in plant:
+            plant['image'] = plant['primary_image']
+        if 'image_url' not in plant and 'image' in plant:
+            plant['image_url'] = plant['image']
+            
     return JsonResponse(results, safe=False)
 
 
@@ -42,4 +56,3 @@ def top_sellers(request):
 
     results = [dict(zip(desc, row)) for row in rows]
     return JsonResponse(results, safe=False)
-

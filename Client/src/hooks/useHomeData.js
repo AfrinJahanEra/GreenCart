@@ -13,7 +13,7 @@ export const useTopCategories = () => {
             try {
                 setLoading(true);
                 const response = await homeAPI.getTopCategories();
-                setCategories(response.data.categories);
+                setCategories(response.data.categories || []);
             } catch (err) {
                 setError(handleApiError(err));
             } finally {
@@ -37,7 +37,7 @@ export const useTopPlants = () => {
             try {
                 setLoading(true);
                 const response = await homeAPI.getTopPlants();
-                setPlants(response.data);
+                setPlants(response.data || []);
             } catch (err) {
                 setError(handleApiError(err));
             }
@@ -62,7 +62,7 @@ export const useTopSellers = () => {
             try {
                 setLoading(true);
                 const response = await homeAPI.getTopSellers();
-                setSellers(response.data);
+                setSellers(response.data || []);
             } catch (err) {
                 setError(handleApiError(err));
             }

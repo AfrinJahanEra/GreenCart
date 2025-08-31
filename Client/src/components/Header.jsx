@@ -7,9 +7,10 @@ import SearchBar from './SearchBar';
 import { theme } from '../theme';
 
 const Header = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth(); // Added logout function
   const [showCart, setShowCart] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false); // Added state for logout confirmation
   const navigate = useNavigate();
 
   // Placeholder for orders count (replace with actual API call later)
@@ -57,6 +58,17 @@ const Header = () => {
         return 'Admin';
       default:
         return 'Customer';
+    }
+  };
+
+  // Handle logout
+  const handleLogout = async () => {
+    try {
+      await logout();
+      setShowLogoutConfirm(false);
+      navigate('/');
+    } catch (error) {
+      console.error('Logout failed:', error);
     }
   };
 
@@ -144,11 +156,33 @@ const Header = () => {
                         {orders.length}
                       </span>
                     </button>
+                    {/* Logout Button for Customer */}
+                    <button
+                      onClick={() => setShowLogoutConfirm(true)}
+                      className="p-1 sm:p-2 rounded-full hover:bg-gray-100 transition-colors"
+                      aria-label="Logout"
+                      title="Logout"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-5 w-5 sm:h-6 sm:w-6"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                        />
+                      </svg>
+                    </button>
                   </div>
                 </>
               ) : (
                 <>
-                  {/* Non-Customer Header: Dashboard Link Only */}
+                  {/* Non-Customer Header: Dashboard Link and Logout */}
                   <div className="flex items-center gap-4">
                     <span className="text-sm text-gray-600">
                       Welcome, {user.first_name} ({getRoleDisplayName()})
@@ -160,6 +194,14 @@ const Header = () => {
                     >
                       Go to Dashboard
                     </Link>
+                    {/* Logout Button for Non-Customer */}
+                    <button
+                      onClick={() => setShowLogoutConfirm(true)}
+                      className="text-sm sm:text-base font-medium hover:text-green-600 px-3 py-1 rounded border"
+                      style={{ color: theme.colors.accent, borderColor: theme.colors.accent }}
+                    >
+                      Logout
+                    </button>
                   </div>
                 </>
               )
@@ -201,6 +243,30 @@ const Header = () => {
           <CartSidebar showCart={showCart} setShowCart={setShowCart} />
           <ProfileSidebar showProfile={showProfile} setShowProfile={setShowProfile} />
         </>
+      )}
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Confirm Logout</h3>
+            <p className="text-gray-600 mb-6">Are you sure you want to logout?</p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

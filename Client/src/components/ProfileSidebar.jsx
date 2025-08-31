@@ -1,361 +1,160 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import Button from './Button';
-import { authAPI } from '../services/api';
-import { handleApiError } from '../utils/errorHandler';
-import { theme } from '../theme';
 
-const ProfileSidebar = ({ showProfile, setShowProfile }) => {
-  const { user, logout } = useAuth();
-  const [isClosing, setIsClosing] = useState(false);
-  const [profile, setProfile] = useState({
-    first_name: '',
-    last_name: '',
-    email: '',
-    phone: '',
-    address: '',
-    profile_image: ''
+const ProfileSidebar = ({ isOpen, onClose, onUpdateInfo }) => {
+  const { user, updateUser } = useAuth();
+  const [formData, setFormData] = useState({
+    first_name: user?.first_name || '',
+    last_name: user?.last_name || '',
+    phone: user?.phone || '',
+    address: user?.address || '',
+    email: user?.email || ''
   });
-  const [isEditing, setIsEditing] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
-  const [file, setFile] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  // Fetch user profile on mount
-  useEffect(() => {
-    if (user && showProfile) {
-      fetchUserProfile();
-    }
-  }, [user, showProfile]);
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
 
-  const fetchUserProfile = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    
     try {
-      setLoading(true);
-      setError(null);
-      const response = await authAPI.getProfile(user.user_id);
+      // Update user information
+      const updatedUser = { ...user, ...formData };
       
-      if (response.data.success) {
-        setProfile({
-          first_name: response.data.profile.first_name || '',
-          last_name: response.data.profile.last_name || '',
-          email: response.data.profile.email || '',
-          phone: response.data.profile.phone || '',
-          address: response.data.profile.address || '',
-          profile_image: response.data.profile.profile_image || 'https://randomuser.me/api/portraits/men/1.jpg'
+      // Call onUpdateInfo to update the order form
+      if (onUpdateInfo) {
+        onUpdateInfo({
+          name: `${formData.first_name} ${formData.last_name}`.trim(),
+          phone: formData.phone,
+          address: formData.address
         });
-      } else {
-        setError('Failed to fetch profile');
       }
-    } catch (err) {
-      setError(handleApiError(err));
+      
+      // Update auth context (if updateUser function exists)
+      if (updateUser) {
+        await updateUser(updatedUser);
+      }
+      
+      onClose();
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      alert('Failed to update profile');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleClose = () => {
-    setIsClosing(true);
-    setTimeout(() => {
-      setShowProfile(false);
-      setIsClosing(false);
-      setIsEditing(false);
-      setError(null);
-      setSuccess(null);
-      setFile(null);
-    }, 300);
-  };
-
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
-    if (selectedFile) {
-      // Validate file type and size
-      if (!selectedFile.type.startsWith('image/')) {
-        setError('Please select an image file');
-        return;
-      }
-      if (selectedFile.size > 5 * 1024 * 1024) { // 5MB limit
-        setError('Image size should be less than 5MB');
-        return;
-      }
-      setFile(selectedFile);
-      setError(null);
-    }
-  };
-
-  const handleSave = async () => {
-    try {
-      setSaving(true);
-      setError(null);
-      setSuccess(null);
-
-      // Prepare form data for profile update
-      const formData = new FormData();
-      formData.append('first_name', profile.first_name);
-      formData.append('last_name', profile.last_name);
-      formData.append('email', profile.email);
-      formData.append('phone', profile.phone);
-      formData.append('address', profile.address);
-      
-      if (file) {
-        formData.append('profile_image', file);
-      }
-
-      // Update profile - user can only update their own profile
-      const response = await authAPI.updateProfile(user.user_id, user.user_id, formData);
-
-      if (response.data.success) {
-        setSuccess('Profile updated successfully');
-        setIsEditing(false);
-        setFile(null);
-        
-        // Refresh profile data
-        await fetchUserProfile();
-      } else {
-        setError('Failed to update profile');
-      }
-    } catch (err) {
-      const errorMsg = handleApiError(err);
-      setError(errorMsg);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleCancel = () => {
-    setIsEditing(false);
-    setFile(null);
-    setError(null);
-    setSuccess(null);
-    // Reset profile data from server
-    fetchUserProfile();
-  };
-
-  const handleDeleteAccount = async () => {
-    if (window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
-      try {
-        setSaving(true);
-        const response = await authAPI.deleteAccount(user.user_id, user.user_id);
-        
-        if (response.data.success) {
-          setSuccess('Account deleted successfully');
-          setTimeout(() => {
-            logout();
-            handleClose();
-          }, 2000);
-        } else {
-          setError('Failed to delete account');
-        }
-      } catch (err) {
-        setError(handleApiError(err));
-      } finally {
-        setSaving(false);
-      }
-    }
-  };
-
-  if (!showProfile) return null;
-
-  const fullName = `${profile.first_name} ${profile.last_name}`.trim();
+  if (!isOpen) return null;
 
   return (
-    <>
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity duration-300"
-        onClick={handleClose}
-      />
-      
-      {/* Sidebar */}
-      <div 
-        className={`fixed top-0 right-0 w-full max-w-md h-full z-50 overflow-y-auto transform transition-transform duration-300 ${isClosing ? 'translate-x-full' : 'translate-x-0'}`}
-        style={{
-          boxShadow: '-5px 0 15px rgba(0,0,0,0.1)',
-          backgroundColor: theme.colors.sidebarBg,
-        }}
-      >
-        <div className="p-6 h-full flex flex-col">
-          <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
-            <h2 className="text-2xl font-bold" style={{ color: theme.colors.primary }}>Your Profile</h2>
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-end">
+      <div className="bg-white w-full max-w-md h-full overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-bold text-[#224229]">Profile Settings</h2>
             <button
-              onClick={handleClose}
-              className="text-gray-600 hover:text-gray-800 transition-colors p-2"
-              disabled={saving}
+              onClick={onClose}
+              className="text-gray-500 hover:text-gray-700"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
 
-          {loading && (
-            <div className="flex justify-center items-center mb-6">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-green-600"></div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-[#224229] mb-2">First Name</label>
+              <input
+                type="text"
+                name="first_name"
+                value={formData.first_name}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#224229] focus:border-transparent"
+                required
+              />
             </div>
-          )}
 
-          {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-              {error}
+            <div>
+              <label className="block text-sm font-medium text-[#224229] mb-2">Last Name</label>
+              <input
+                type="text"
+                name="last_name"
+                value={formData.last_name}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#224229] focus:border-transparent"
+                required
+              />
             </div>
-          )}
 
-          {success && (
-            <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
-              {success}
+            <div>
+              <label className="block text-sm font-medium text-[#224229] mb-2">Email</label>
+              <input
+                type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#224229] focus:border-transparent bg-gray-100"
+                disabled
+              />
+              <p className="text-xs text-gray-500 mt-1">Email cannot be changed</p>
             </div>
-          )}
 
-          {!loading && (
-            <div className="flex-1 overflow-y-auto">
-              <div className="flex flex-col items-center mb-6">
-                <img
-                  src={file ? URL.createObjectURL(file) : profile.profile_image}
-                  alt="Profile"
-                  className="w-24 h-24 rounded-full object-cover mb-4 border-2 border-white shadow-lg"
-                  onError={(e) => {
-                    e.target.src = 'https://randomuser.me/api/portraits/men/1.jpg';
-                  }}
-                />
-                {isEditing && (
-                  <div className="mb-4 w-full max-w-xs">
-                    <label className="block text-sm font-medium mb-2 text-center" style={{ color: theme.colors.primary }}>
-                      Change Profile Picture
-                    </label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileChange}
-                      className="block w-full text-sm text-gray-500
-                        file:mr-4 file:py-2 file:px-4
-                        file:rounded-full file:border-0
-                        file:text-sm file:font-semibold
-                        file:bg-green-50 file:text-green-700
-                        hover:file:bg-green-100"
-                      disabled={saving}
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-4 mb-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.primary }}>First Name</label>
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={profile.first_name}
-                        onChange={(e) => setProfile({ ...profile, first_name: e.target.value })}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        disabled={saving}
-                      />
-                    ) : (
-                      <p className="px-4 py-2 bg-gray-50 rounded-lg min-h-10">{profile.first_name || 'Not provided'}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.primary }}>Last Name</label>
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={profile.last_name}
-                        onChange={(e) => setProfile({ ...profile, last_name: e.target.value })}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        disabled={saving}
-                      />
-                    ) : (
-                      <p className="px-4 py-2 bg-gray-50 rounded-lg min-h-10">{profile.last_name || 'Not provided'}</p>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.primary }}>Email</label>
-                  <p className="px-4 py-2 bg-gray-50 rounded-lg">{profile.email}</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.primary }}>Phone</label>
-                  {isEditing ? (
-                    <input
-                      type="tel"
-                      value={profile.phone}
-                      onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      disabled={saving}
-                    />
-                  ) : (
-                    <p className="px-4 py-2 bg-gray-50 rounded-lg min-h-10">{profile.phone || 'Not provided'}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2" style={{ color: theme.colors.primary }}>Address</label>
-                  {isEditing ? (
-                    <textarea
-                      value={profile.address}
-                      onChange={(e) => setProfile({ ...profile, address: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      rows="3"
-                      disabled={saving}
-                    />
-                  ) : (
-                    <p className="px-4 py-2 bg-gray-50 rounded-lg min-h-20 whitespace-pre-wrap">{profile.address || 'Not provided'}</p>
-                  )}
-                </div>
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-[#224229] mb-2">Phone Number</label>
+              <input
+                type="tel"
+                name="phone"
+                value={formData.phone}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#224229] focus:border-transparent"
+                required
+              />
             </div>
-          )}
 
-          <div className="pt-4 border-t border-gray-200">
-            <div className="flex gap-3">
-              {isEditing ? (
-                <>
-                  <Button
-                    onClick={handleSave}
-                    className="flex-1"
-                    disabled={saving}
-                    loading={saving}
-                  >
-                    {saving ? 'Saving...' : 'Save Changes'}
-                  </Button>
-                  <Button
-                    onClick={handleCancel}
-                    type="secondary"
-                    className="flex-1"
-                    disabled={saving}
-                  >
-                    Cancel
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    onClick={() => setIsEditing(true)}
-                    className="flex-1"
-                    disabled={loading}
-                  >
-                    Edit Profile
-                  </Button>
-                  <Button
-                    onClick={handleDeleteAccount}
-                    type="danger"
-                    className="flex-1"
-                    disabled={loading || saving}
-                    loading={saving}
-                  >
-                    Delete Account
-                  </Button>
-                </>
-              )}
+            <div>
+              <label className="block text-sm font-medium text-[#224229] mb-2">Address</label>
+              <textarea
+                name="address"
+                value={formData.address}
+                onChange={handleInputChange}
+                rows="3"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#224229] focus:border-transparent"
+                required
+              />
             </div>
-          </div>
+
+            <div className="flex gap-3 pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className={`flex-1 px-4 py-2 rounded-lg font-medium text-white transition-colors ${
+                  loading
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-[#224229] hover:bg-[#4b6250]'
+                }`}
+              >
+                {loading ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
-    </>
+    </div>
   );
 };
 

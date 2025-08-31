@@ -75,11 +75,11 @@ WSGI_APPLICATION = 'greencart.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.oracle',
-        'NAME': 'xe', 
-        'USER': 'system',  
-        'PASSWORD': '123',  
-        'HOST': 'localhost',
-        'PORT': '1521',
+        'NAME': os.getenv('ORACLE_NAME', 'xe'), 
+        'USER': os.getenv('ORACLE_USER', 'system'),  
+        'PASSWORD': os.getenv('ORACLE_PASSWORD', '1234'),  
+        'HOST': os.getenv('ORACLE_HOST', 'localhost'),
+        'PORT': os.getenv('ORACLE_PORT', '1521'),
     }
 }
 

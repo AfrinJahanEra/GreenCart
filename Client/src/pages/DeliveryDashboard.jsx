@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useDeliveryAgent } from '../hooks/useDeliveryAgent';
 
 const DeliveryDashboard = () => {
-  const [activeTab, setActiveTab] = useState('assigned');
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -35,7 +35,12 @@ const DeliveryDashboard = () => {
     return result;
   };
 
-  // Calculate total earnings from stats
+  // Calculate total earnings from stats with safe conversion
+  const formatPrice = (value) => {
+    const numValue = parseFloat(value);
+    return isNaN(numValue) ? '0.00' : numValue.toFixed(2);
+  };
+  
   const totalEarnings = dashboardData.stats?.total_earnings || 0;
 
   return (
@@ -57,6 +62,14 @@ const DeliveryDashboard = () => {
           
           <nav>
             <ul className="space-y-2">
+              <li>
+                <button
+                  onClick={() => handleTabChange('dashboard')}
+                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${activeTab === 'dashboard' ? 'bg-green-700' : 'hover:bg-green-800'}`}
+                >
+                  Dashboard
+                </button>
+              </li>
               <li>
                 <button
                   onClick={() => handleTabChange('assigned')}
@@ -154,7 +167,7 @@ const DeliveryDashboard = () => {
         <div className="fixed bottom-0 left-0 right-0 md:left-64 bg-[#224229] text-white p-3 shadow-lg z-30">
           <div className="container mx-auto flex justify-between items-center">
             <span className="font-medium">Total Earnings:</span>
-            <span className="text-xl font-bold">${totalEarnings.toFixed(2)}</span>
+            <span className="text-xl font-bold">${formatPrice(totalEarnings)}</span>
           </div>
         </div>
       </div>

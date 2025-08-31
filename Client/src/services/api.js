@@ -86,12 +86,9 @@ export const plantCollectionAPI = {
 
 export const plantDetailAPI = {
   getPlantDetails: (plantId) => api.get(`/plant_detail/plant/${plantId}/`),
-  addToCart: (cartData) => api.post('/plant_detail/cart/add/', cartData),
-  getReviews: (plantId) => api.get(`/plant_detail/reviews/${plantId}/`),
-  addReview: (plantId, userId, reviewData) => 
-    api.post(`/plant_detail/review/add/${plantId}/${userId}/`, reviewData),
-  deleteReview: (requestorId, reviewId) => 
-    api.post(`/plant_detail/review/delete/${requestorId}/`, { review_id: reviewId }),
+  addToCart: (cartData) => api.post('/plant_detail/add-to-cart/', cartData),
+  addReview: (plantId, reviewData) => 
+    api.post(`/plant_detail/add-review/${plantId}/`, reviewData),
 };
 
 export const adminAPI = {
@@ -106,36 +103,82 @@ export const adminAPI = {
   getOrderOverview: () => api.get('/admin_dashboard/order-overview/'),
   getLowStockDetails: () => api.get('/admin_dashboard/low-stock-details/'),
   getDeliveryAgentPerformance: () => api.get('/admin_dashboard/delivery-agent-performance/'),
+  getAvailableDeliveryAgents: (deliveryDate = null) => {
+    const url = deliveryDate 
+      ? `/admin_dashboard/available-delivery-agents/?delivery_date=${deliveryDate}`
+      : '/admin_dashboard/available-delivery-agents/';
+    return api.get(url);
+  },
+  deleteCustomer: (requestorId, customerId) => 
+    api.post('/admin_dashboard/delete-customer/', { 
+      requestor_id: requestorId, 
+      customer_id: customerId 
+    }),
+  // New endpoints for discount functionality
+  getDiscountTypes: () => api.get('/admin_dashboard/discount-types/'),
+  getAllPlants: () => api.get('/admin_dashboard/all-plants/'),
+  getAllCategories: () => api.get('/admin_dashboard/all-categories/'),
+  getAllDiscounts: () => api.get('/admin_dashboard/all-discounts/'),
 };
 
 export const sellerAPI = {
-  getSellerStats: (sellerId) => api.get(`/seller/seller/${sellerId}/stats/`),
-  getRecentSales: (sellerId) => api.get(`/seller/seller/${sellerId}/recent-sales/`),
-  getLowStockPlants: (sellerId) => api.get(`/seller/seller/${sellerId}/low-stock/`),
+  // Dashboard - All data in one call
+  getSellerDashboard: (sellerId) => api.get(`/seller/${sellerId}/dashboard/`),
+  
+  // Individual endpoints
+  getSellerStats: (sellerId) => api.get(`/seller/${sellerId}/stats/`),
+  getRecentSales: (sellerId) => api.get(`/seller/${sellerId}/recent-sales/`),
+  getLowStockPlants: (sellerId) => api.get(`/seller/${sellerId}/low-stock/`),
   getSellerPlants: (sellerId) => api.get(`/seller/${sellerId}/plants/`),
-  getSalesRecords: (sellerId) => api.get(`/seller/seller/${sellerId}/sales/`),
+  getSalesRecords: (sellerId) => api.get(`/seller/${sellerId}/sales/`),
+  
+  // Plant management
   addPlant: (plantData) => api.post('/seller/plants/add/', plantData),
   updatePlant: (plantId, plantData) => api.put(`/seller/plants/${plantId}/update/`, plantData),
   getPlantDetails: (plantId) => api.get(`/seller/plants/${plantId}/`),
+  
+  // Utilities
+  recordManualSale: (saleData) => api.post('/seller/record-sale/', saleData),
+  getCategories: () => api.get('/seller/categories/'),
   uploadImages: (formData) => {
     const config = {
       headers: {
         'Content-Type': 'multipart/form-data',
       }
     };
-    return api.post('/seller/plants/upload-images/', formData, config);
+    return api.post('/seller/upload-images/', formData, config);
   },
-  getCategories: () => api.get('/categories/'),
+  debugSeller: (sellerId) => api.get(`/seller/${sellerId}/debug/`),
 };
 
 // src/services/api.js - Add delivery agent API functions
 export const deliveryAgentAPI = {
+  // Dashboard and stats
   getDashboard: (agentId) => api.get(`/delivery_agent/dashboard/${agentId}/`),
+  getStats: (agentId) => api.get(`/delivery_agent/stats/${agentId}/`),
+  
+  // Orders management
+  getAllOrders: (agentId, status = null) => {
+    const url = status 
+      ? `/delivery_agent/orders/${agentId}/?status=${status}`
+      : `/delivery_agent/orders/${agentId}/`;
+    return api.get(url);
+  },
+  getPendingOrders: (agentId) => api.get(`/delivery_agent/pending-orders/${agentId}/`),
+  getCompletedOrders: (agentId) => api.get(`/delivery_agent/completed-orders/${agentId}/`),
+  
+  // Delivery actions
+  updateDeliveryStatus: (data) => api.post('/delivery_agent/update-status/', data),
   markDeliveryCompleted: (data) => api.post('/delivery_agent/mark-delivered/', data),
-  getAssignmentCount: (agentId, status) => 
-    api.get(`/delivery_agent/assignment-count/${agentId}/?status=${status || ''}`),
-  getMonthlyEarnings: (agentId, year) => 
-    api.get(`/delivery_agent/monthly-earnings/${agentId}/?year=${year || ''}`),
+  confirmDelivery: (data) => api.post('/delivery_agent/confirm-delivery/', data),
+  
+  // Statistics and earnings
+  getAssignmentCount: (agentId, status = null) => {
+    const url = status 
+      ? `/delivery_agent/assignment-count/${agentId}/?status=${status}`
+      : `/delivery_agent/assignment-count/${agentId}/`;
+    return api.get(url);
+  },
 };
 
 
@@ -186,17 +229,18 @@ export const customerOrdersAPI = {
 export const cartAPI = {
   getCart: (userId) => api.get(`/cart/${userId}/`),
   addToCart: (cartData) => api.post('/cart/add/', cartData),
-  updateCartItem: (cartId, quantity) => api.put(`/cart/${cartId}/`, { quantity }),
-  removeFromCart: (cartId) => api.delete(`/cart/${cartId}/`),
-  clearCart: (userId) => api.delete(`/cart/clear/${userId}/`),
+  toggleCartItem: (data) => api.post('/cart/toggle/', data),
+  updateCartQuantity: (data) => api.post('/cart/update_quantity/', data),
+  removeFromCart: (data) => api.post('/cart/delete/', data),
 };
 
-export const addReview = (plantId, userId, reviewData) => {
-  return plantDetailAPI.addReview(plantId, userId, reviewData);
+export const addReview = (plantId, reviewData) => {
+  return plantDetailAPI.addReview(plantId, reviewData);
 };
 
 export const deleteReview = (requestorId, reviewId) => {
-  return plantDetailAPI.deleteReview(requestorId, reviewId);
+  // This functionality is not implemented in the backend yet
+  return Promise.reject(new Error('Delete review functionality not implemented'));
 };
 
 export default api;

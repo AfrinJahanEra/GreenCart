@@ -65,8 +65,63 @@ def plant_details(request, plant_id):
                     'sizes': [],
                     'features': [],
                     'care_tips': [],
-                    'reviews': []
+                    'reviews': [],
+                    'discount': None  # Add discount information
                 }
+                
+                # Get discount information for the plant (including category discounts)
+                cursor.execute("""
+                    SELECT 
+                        d.discount_id,
+                        d.name,
+                        d.description,
+                        d.discount_value,
+                        d.is_percentage,
+                        d.start_date,
+                        d.end_date
+                    FROM plant_discounts pd
+                    JOIN discounts d ON pd.discount_id = d.discount_id
+                    JOIN discount_types dt ON d.discount_type_id = dt.discount_type_id
+                    WHERE (pd.plant_id = :plant_id OR pd.category_id IN (
+                        SELECT category_id FROM plant_category_mapping WHERE plant_id = :plant_id
+                    ))
+                    AND d.is_active = 1
+                    AND d.start_date <= SYSTIMESTAMP
+                    AND d.end_date >= SYSTIMESTAMP
+                    ORDER BY d.discount_value DESC
+                """, {'plant_id': plant_id})
+                
+                discount_data = dictfetchall(cursor)
+                print(f"Discount data for plant {plant_id}: {discount_data}")  # Debug log
+                
+                if discount_data:
+                    # Get the highest discount for display
+                    discount = discount_data[0]
+                    # Handle datetime conversion properly
+                    start_date_iso = None
+                    end_date_iso = None
+                    
+                    if discount.get('start_date'):
+                        try:
+                            start_date_iso = discount['start_date'].isoformat() if hasattr(discount['start_date'], 'isoformat') else str(discount['start_date'])
+                        except:
+                            start_date_iso = str(discount['start_date'])
+                    
+                    if discount.get('end_date'):
+                        try:
+                            end_date_iso = discount['end_date'].isoformat() if hasattr(discount['end_date'], 'isoformat') else str(discount['end_date'])
+                        except:
+                            end_date_iso = str(discount['end_date'])
+                    
+                    result['discount'] = {
+                        'discount_id': discount.get('discount_id'),
+                        'name': discount.get('name', ''),
+                        'description': discount.get('description', ''),
+                        'discount_value': float(discount.get('discount_value', 0)),
+                        'is_percentage': int(discount.get('is_percentage', 0)),
+                        'start_date': start_date_iso,
+                        'end_date': end_date_iso
+                    }
                 
                 # Get additional images
                 cursor.execute("""
@@ -137,6 +192,7 @@ def plant_details(request, plant_id):
                     })
                 result['reviews'] = formatted_reviews
                 
+                print(f"Final result for plant {plant_id}: {result}")  # Debug log
                 return JsonResponse({'success': True, 'plant': result})
                 
         except Exception as e:

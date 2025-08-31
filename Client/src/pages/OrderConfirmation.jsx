@@ -34,9 +34,32 @@ const OrderConfirmation = () => {
   };
 
   const calculateTotal = () => {
-    const subtotal = order.items.reduce((total, item) => total + (item.price * item.quantity), 0);
-    const delivery = order.deliveryMethod?.price || 0;
-    return (subtotal + delivery).toFixed(2);
+    // Ensure all values are numbers and handle edge cases
+    const subtotal = order.items.reduce((total, item) => {
+      const price = parseFloat(item.price) || 0;
+      const quantity = parseInt(item.quantity) || 0;
+      return total + (price * quantity);
+    }, 0);
+    
+    const delivery = parseFloat(order.deliveryMethod?.price) || 0;
+    const total = subtotal + delivery;
+    
+    // Ensure total is a valid number before calling toFixed
+    return isNaN(total) ? '0.00' : total.toFixed(2);
+  };
+
+  const calculateSubtotal = () => {
+    const subtotal = order.items.reduce((total, item) => {
+      const price = parseFloat(item.price) || 0;
+      const quantity = parseInt(item.quantity) || 0;
+      return total + (price * quantity);
+    }, 0);
+    return isNaN(subtotal) ? '0.00' : subtotal.toFixed(2);
+  };
+
+  const getDeliveryPrice = () => {
+    const delivery = parseFloat(order.deliveryMethod?.price) || 0;
+    return delivery > 0 ? delivery.toFixed(2) : 'Free';
   };
 
   return (
@@ -76,7 +99,9 @@ const OrderConfirmation = () => {
                     <p className="text-xs sm:text-sm text-gray-600">Size: {item.size}</p>
                     <div className="flex justify-between items-center mt-1 sm:mt-2">
                       <p className="text-xs sm:text-sm text-gray-600">Qty: {item.quantity}</p>
-                      <p className="font-medium text-sm sm:text-base text-[#224229]">${(item.price * item.quantity).toFixed(2)}</p>
+                      <p className="font-medium text-sm sm:text-base text-[#224229]">
+                        ${((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 0)).toFixed(2)}
+                      </p>
                     </div>
                     <p className="text-xs text-gray-500 mt-1">Seller contact: plantshop@example.com</p>
                   </div>
@@ -88,15 +113,13 @@ const OrderConfirmation = () => {
               <div className="flex justify-between">
                 <span className="text-xs sm:text-sm text-gray-600">Subtotal</span>
                 <span className="text-xs sm:text-sm">
-                  ${order.items.reduce((total, item) => total + (item.price * item.quantity), 0).toFixed(2)}
+                  ${calculateSubtotal()}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-xs sm:text-sm text-gray-600">Delivery</span>
                 <span className="text-xs sm:text-sm">
-                  {order.deliveryMethod?.price > 0 
-                    ? `$${order.deliveryMethod.price}` 
-                    : 'Free'}
+                  {getDeliveryPrice() === 'Free' ? 'Free' : `$${getDeliveryPrice()}`}
                 </span>
               </div>
               <div className="flex justify-between font-bold text-base sm:text-lg pt-2 sm:pt-3 border-t border-[#e5e7eb] mt-2 sm:mt-3">

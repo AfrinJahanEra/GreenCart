@@ -6,7 +6,7 @@ import json
 
 def dictfetchall(cursor):
     """Return all rows from a cursor as a list of dictionaries"""
-    columns = [col[0] for col in cursor.description]
+    columns = [col[0].lower() for col in cursor.description]  # Convert to lowercase
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
 @csrf_exempt
@@ -77,7 +77,7 @@ def pending_confirmation_orders(request, user_id):
     if request.method == 'GET':
         try:
             with connection.cursor() as cursor:
-                # Direct SQL query
+                # Direct SQL query - Show orders that customers need to confirm
                 cursor.execute("""
                     SELECT 
                         o.order_id,
@@ -92,8 +92,8 @@ def pending_confirmation_orders(request, user_id):
                         ua.first_name || ' ' || ua.last_name AS delivery_agent_name,
                         ua.phone AS delivery_agent_phone,
                         da.vehicle_type,
-                        dc.agent_confirmed,
-                        dc.customer_confirmed,
+                        NVL(dc.agent_confirmed, 0) AS agent_confirmed,
+                        NVL(dc.customer_confirmed, 0) AS customer_confirmed,
                         dc.confirmed_date,
                         (SELECT LISTAGG(p.name || ' (x' || oi.quantity || ')', ', ') 
                          WITHIN GROUP (ORDER BY oi.order_item_id)
@@ -108,9 +108,13 @@ def pending_confirmation_orders(request, user_id):
                     LEFT JOIN users ua ON da.user_id = ua.user_id
                     LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
                     WHERE o.user_id = :user_id
-                    AND os.status_name = 'Out for Delivery'
-                    AND dc.agent_confirmed = 1
-                    AND dc.customer_confirmed = 0
+                    AND (
+                        -- Orders that are shipped/out for delivery and need customer confirmation
+                        (os.status_name IN ('Shipped', 'Out for Delivery') AND NVL(dc.customer_confirmed, 0) = 0)
+                        OR
+                        -- Orders that are out for delivery with agent confirmed but customer not confirmed
+                        (os.status_name = 'Out for Delivery' AND dc.agent_confirmed = 1 AND NVL(dc.customer_confirmed, 0) = 0)
+                    )
                     ORDER BY o.order_date DESC
                 """, {'user_id': user_id})
                 
@@ -183,108 +187,6 @@ def completed_orders_for_review(request, user_id):
                 'error': str(e)
             }, status=500)
 
-@csrf_exempt
-def confirm_delivery(request):
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            order_id = data.get('order_id')
-            user_id = data.get('user_id')
-            
-            with connection.cursor() as cursor:
-                # Use direct SQL for the confirmation process
-                
-                # 1. Check if order exists and belongs to user
-                cursor.execute("""
-                    SELECT COUNT(*), user_id
-                    FROM orders
-                    WHERE order_id = :order_id
-                """, {'order_id': order_id})
-                
-                result = cursor.fetchone()
-                if not result or result[0] == 0:
-                    return JsonResponse({
-                        'success': False,
-                        'message': 'Order not found'
-                    })
-                
-                if result[1] != user_id:
-                    return JsonResponse({
-                        'success': False,
-                        'message': 'Not authorized to confirm this delivery'
-                    })
-                
-                # 2. Check order status
-                cursor.execute("""
-                    SELECT os.status_name
-                    FROM orders o
-                    JOIN order_statuses os ON o.status_id = os.status_id
-                    WHERE o.order_id = :order_id
-                """, {'order_id': order_id})
-                
-                status_result = cursor.fetchone()
-                if not status_result or status_result[0] != 'Out for Delivery':
-                    return JsonResponse({
-                        'success': False,
-                        'message': 'Order is not out for delivery'
-                    })
-                
-                # 3. Check if agent has confirmed
-                cursor.execute("""
-                    SELECT NVL(agent_confirmed, 0)
-                    FROM delivery_confirmations
-                    WHERE order_id = :order_id
-                """, {'order_id': order_id})
-                
-                agent_confirmed_result = cursor.fetchone()
-                if not agent_confirmed_result or agent_confirmed_result[0] == 0:
-                    return JsonResponse({
-                        'success': False,
-                        'message': 'Delivery agent has not confirmed delivery yet'
-                    })
-                
-                # 4. Update customer confirmation
-                cursor.execute("""
-                    MERGE INTO delivery_confirmations dc
-                    USING (SELECT :order_id AS order_id, :user_id AS user_id FROM dual) src
-                    ON (dc.order_id = src.order_id)
-                    WHEN MATCHED THEN
-                        UPDATE SET 
-                            customer_confirmed = 1,
-                            confirmed_date = CASE WHEN agent_confirmed = 1 THEN SYSTIMESTAMP ELSE confirmed_date END
-                    WHEN NOT MATCHED THEN
-                        INSERT (order_id, user_id, agent_id, customer_confirmed)
-                        VALUES (src.order_id, src.user_id, 
-                               (SELECT agent_id FROM order_assignments WHERE order_id = :order_id), 1)
-                """, {'order_id': order_id, 'user_id': user_id})
-                
-                # 5. If both confirmed, update order status to Delivered
-                cursor.execute("""
-                    UPDATE orders
-                    SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
-                        actual_delivery_date = SYSTIMESTAMP
-                    WHERE order_id = :order_id
-                    AND EXISTS (
-                        SELECT 1 FROM delivery_confirmations 
-                        WHERE order_id = :order_id 
-                        AND customer_confirmed = 1 
-                        AND agent_confirmed = 1
-                    )
-                """, {'order_id': order_id})
-                
-                connection.commit()
-                
-                return JsonResponse({
-                    'success': True,
-                    'message': 'Delivery confirmed successfully'
-                })
-                
-        except Exception as e:
-            connection.rollback()
-            return JsonResponse({
-                'success': False,
-                'error': str(e)
-            }, status=500)
 
 @csrf_exempt
 def add_review_view(request):
@@ -578,21 +480,76 @@ def get_delivery_methods(request):
     if request.method == 'GET':
         try:
             with connection.cursor() as cursor:
+                # Use direct SQL for simplicity and reliability
                 cursor.execute("""
                     SELECT 
                         method_id AS id,
                         name,
                         base_cost AS price,
-                        estimated_days AS time
+                        estimated_days AS time,
+                        description
                     FROM delivery_methods
                     WHERE is_active = 1
                     ORDER BY method_id
                 """)
                 
                 methods = dictfetchall(cursor)
+                print(f"DEBUG: Found {len(methods)} delivery methods: {methods}")  # Debug log
+                
+                # Validate that we have data and required fields
+                if not methods:
+                    return JsonResponse({'success': False, 'error': 'No delivery methods found'}, status=500)
+                
+                # Check first method to ensure it has required fields
+                first_method = methods[0]
+                required_fields = ['id', 'name', 'price', 'time']
+                missing_fields = [field for field in required_fields if field not in first_method]
+                
+                if missing_fields:
+                    print(f"ERROR: Missing fields {missing_fields} in delivery method: {first_method}")
+                    print(f"Available fields: {list(first_method.keys())}")
+                    return JsonResponse({'success': False, 'error': f'Missing required fields: {missing_fields}'}, status=500)
+                
                 return JsonResponse({'success': True, 'methods': methods})
                 
         except Exception as e:
+            print(f"ERROR in get_delivery_methods: {str(e)}")  # Debug log
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+def test_delivery_methods(request):
+    """Test endpoint to debug delivery methods table"""
+    if request.method == 'GET':
+        try:
+            with connection.cursor() as cursor:
+                # First, check if table exists and has data
+                cursor.execute("SELECT COUNT(*) FROM delivery_methods")
+                total_count = cursor.fetchone()[0]
+                
+                cursor.execute("SELECT COUNT(*) FROM delivery_methods WHERE is_active = 1")
+                active_count = cursor.fetchone()[0]
+                
+                # Get all delivery methods (active and inactive)
+                cursor.execute("""
+                    SELECT method_id, name, base_cost, estimated_days, is_active
+                    FROM delivery_methods
+                    ORDER BY method_id
+                """)
+                all_methods = dictfetchall(cursor)
+                
+                return JsonResponse({
+                    'success': True, 
+                    'total_methods': total_count,
+                    'active_methods': active_count,
+                    'all_methods': all_methods
+                })
+                
+        except Exception as e:
+            print(f"ERROR in test_delivery_methods: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 @csrf_exempt
@@ -606,22 +563,170 @@ def create_order_view(request):
             delivery_notes = data.get('delivery_notes', '')
             cart_ids = data.get('cart_ids', '')
             
+            print(f"DEBUG: Received order data: user_id={user_id}, delivery_method_id={delivery_method_id}, address='{delivery_address}', cart_ids='{cart_ids}'")  # Debug log
+            
+            # Validate required fields
+            if not user_id:
+                return JsonResponse({'success': False, 'error': 'User ID is required'}, status=400)
+            if not delivery_method_id:
+                return JsonResponse({'success': False, 'error': 'Delivery method is required'}, status=400)
+            if not delivery_address:
+                return JsonResponse({'success': False, 'error': 'Delivery address is required'}, status=400)
+            
             # Generate order number
             import random
             order_number = f'ORD-{random.randint(10000, 99999)}'
             
             with connection.cursor() as cursor:
-                total_amount_var = cursor.var(float)
-                order_id_var = cursor.var(int)
+                # Use direct SQL instead of stored procedure to avoid VariableWrapper error
                 
-                cursor.callproc('create_order', [
-                    user_id, order_number, delivery_method_id, 
-                    delivery_address, delivery_notes, cart_ids,
-                    total_amount_var, order_id_var
-                ])
+                # Get status_id for 'Processing'
+                cursor.execute("""
+                    SELECT status_id FROM order_statuses WHERE status_name = 'Processing'
+                """)
+                status_id = cursor.fetchone()[0]
                 
-                total_amount = total_amount_var.getvalue()
-                order_id = order_id_var.getvalue()
+                # Get delivery method details
+                cursor.execute("""
+                    SELECT base_cost, estimated_days 
+                    FROM delivery_methods 
+                    WHERE method_id = :delivery_method_id AND is_active = 1
+                """, {'delivery_method_id': delivery_method_id})
+                
+                delivery_info = cursor.fetchone()
+                print(f"DEBUG: Delivery method query result: {delivery_info}")  # Debug log
+                
+                if not delivery_info:
+                    # Check if delivery method exists but is inactive
+                    cursor.execute("""
+                        SELECT COUNT(*), is_active FROM delivery_methods WHERE method_id = :delivery_method_id GROUP BY is_active
+                    """, {'delivery_method_id': delivery_method_id})
+                    check_result = cursor.fetchone()
+                    if check_result:
+                        error_msg = f'Delivery method {delivery_method_id} exists but is inactive (is_active={check_result[1]})'
+                    else:
+                        error_msg = f'Delivery method {delivery_method_id} does not exist'
+                    print(f"DEBUG: {error_msg}")  # Debug log
+                    return JsonResponse({'success': False, 'error': error_msg}, status=400)
+                
+                delivery_cost = float(delivery_info[0]) if delivery_info[0] else 0.0
+                estimated_days_str = delivery_info[1]
+                
+                # Extract numeric days from string like "3-5 days" or "1-2 days"
+                import re
+                days_match = re.search(r'(\d+)', estimated_days_str)
+                estimated_days = int(days_match.group(1)) if days_match else 3  # Default to 3 days
+                
+                # Calculate estimated delivery date
+                from datetime import datetime, timedelta
+                estimated_delivery_date = datetime.now() + timedelta(days=estimated_days)
+                
+                # Calculate total amount BEFORE inserting order
+                total_amount = delivery_cost  # Start with delivery cost
+                
+                if cart_ids:
+                    cart_id_list = [int(x.strip()) for x in cart_ids.split(',') if x.strip()]
+                    print(f"DEBUG: Processing cart IDs: {cart_id_list}")  # Debug log
+                    
+                    for cart_id in cart_id_list:
+                        # Get cart item details
+                        cursor.execute("""
+                            SELECT c.plant_id, c.size_id, c.quantity, 
+                                   (p.base_price + COALESCE(ps.price_adjustment, 0)) as unit_price
+                            FROM carts c
+                            JOIN plants p ON c.plant_id = p.plant_id
+                            LEFT JOIN plant_sizes ps ON c.plant_id = ps.plant_id AND c.size_id = ps.size_id
+                            WHERE c.cart_id = :cart_id AND c.user_id = :user_id
+                        """, {'cart_id': cart_id, 'user_id': user_id})
+                        
+                        cart_item = cursor.fetchone()
+                        if cart_item:
+                            plant_id, size_id, quantity, unit_price = cart_item
+                            unit_price = float(unit_price) if unit_price else 0.0
+                            quantity = int(quantity) if quantity else 0
+                            item_total = unit_price * quantity
+                            total_amount += item_total
+                            print(f"DEBUG: Cart item {cart_id}: price={unit_price}, qty={quantity}, total={item_total}")  # Debug log
+                        else:
+                            print(f"WARNING: Cart item {cart_id} not found for user {user_id}")  # Debug log
+                
+                print(f"DEBUG: Calculated total amount: {total_amount}")  # Debug log
+                
+                # Ensure total_amount is not NULL or 0
+                if total_amount <= 0:
+                    return JsonResponse({'success': False, 'error': 'Invalid order total. Please check your cart items.'}, status=400)
+                
+                # Insert order with calculated total
+                cursor.execute("""
+                    INSERT INTO orders (
+                        user_id, order_number, status_id, delivery_method_id,
+                        delivery_address, delivery_notes, estimated_delivery_date, total_amount
+                    ) VALUES (
+                        :user_id, :order_number, :status_id, :delivery_method_id,
+                        :delivery_address, :delivery_notes, :estimated_delivery_date, :total_amount
+                    )
+                """, {
+                    'user_id': user_id,
+                    'order_number': order_number,
+                    'status_id': status_id,
+                    'delivery_method_id': delivery_method_id,
+                    'delivery_address': delivery_address,
+                    'delivery_notes': delivery_notes,
+                    'estimated_delivery_date': estimated_delivery_date,
+                    'total_amount': total_amount
+                })
+                
+                # Get the order_id of the inserted order
+                cursor.execute("SELECT seq_orders.CURRVAL FROM DUAL")
+                order_id = cursor.fetchone()[0]
+                
+                print(f"DEBUG: Created order {order_id} with total {total_amount}")  # Debug log
+                
+                # Create order items
+                if cart_ids:
+                    cart_id_list = [int(x.strip()) for x in cart_ids.split(',') if x.strip()]
+                    
+                    for cart_id in cart_id_list:
+                        # Get cart item details again for order items
+                        cursor.execute("""
+                            SELECT c.plant_id, c.size_id, c.quantity, 
+                                   (p.base_price + COALESCE(ps.price_adjustment, 0)) as unit_price
+                            FROM carts c
+                            JOIN plants p ON c.plant_id = p.plant_id
+                            LEFT JOIN plant_sizes ps ON c.plant_id = ps.plant_id AND c.size_id = ps.size_id
+                            WHERE c.cart_id = :cart_id AND c.user_id = :user_id
+                        """, {'cart_id': cart_id, 'user_id': user_id})
+                        
+                        cart_item = cursor.fetchone()
+                        if cart_item:
+                            plant_id, size_id, quantity, unit_price = cart_item
+                            unit_price = float(unit_price) if unit_price else 0.0
+                            quantity = int(quantity) if quantity else 0
+                            
+                            # Insert order item (no discount_applied since we don't have discount logic yet)
+                            cursor.execute("""
+                                INSERT INTO order_items (
+                                    order_id, plant_id, size_id, quantity, unit_price, discount_applied
+                                ) VALUES (
+                                    :order_id, :plant_id, :size_id, :quantity, :unit_price, :discount_applied
+                                )
+                            """, {
+                                'order_id': order_id,
+                                'plant_id': plant_id,
+                                'size_id': size_id,
+                                'quantity': quantity,
+                                'unit_price': unit_price,
+                                'discount_applied': 0.0  # Default to 0 since no discount logic implemented
+                            })
+                    
+                    # Remove items from cart
+                    cart_ids_str = ','.join(map(str, cart_id_list))
+                    cursor.execute(f"""
+                        DELETE FROM carts 
+                        WHERE cart_id IN ({cart_ids_str}) AND user_id = :user_id
+                    """, {'user_id': user_id})
+                
+                connection.commit()
                 
                 return JsonResponse({
                     'success': True,
@@ -632,6 +737,7 @@ def create_order_view(request):
                 })
                 
         except Exception as e:
+            connection.rollback()
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
 @csrf_exempt
@@ -699,3 +805,102 @@ def get_order_details_view(request, order_id):
                 
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+
+
+# order/views.py
+@csrf_exempt
+def confirm_customer_delivery(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            order_id = data.get('order_id')
+            user_id = data.get('user_id')
+            
+            # Extract the actual value from the database result to avoid VariableWrapper error
+            if hasattr(user_id, 'value'):
+                user_id = user_id.value
+            
+            with connection.cursor() as cursor:
+                # Verify order belongs to user
+                cursor.execute("""
+                    SELECT COUNT(*) FROM orders WHERE order_id = %s AND user_id = %s
+                """, [order_id, user_id])
+                
+                order_count = cursor.fetchone()[0]
+                if order_count == 0:
+                    return JsonResponse({'success': False, 'error': 'Order not found or not authorized'})
+                
+                # Check if delivery confirmation record exists, create if not
+                cursor.execute("""
+                    SELECT COUNT(*) FROM delivery_confirmations WHERE order_id = %s
+                """, [order_id])
+                
+                confirmation_exists = cursor.fetchone()[0]
+                if confirmation_exists == 0:
+                    # Get agent_id from order_assignments
+                    cursor.execute("""
+                        SELECT agent_id FROM order_assignments WHERE order_id = %s
+                    """, [order_id])
+                    
+                    agent_result = cursor.fetchone()
+                    if agent_result:
+                        agent_id = agent_result[0]
+                        # Extract the actual value from the database result to avoid VariableWrapper error
+                        if hasattr(agent_id, 'value'):
+                            agent_id = agent_id.value
+                    else:
+                        # If no agent is assigned, we can't create a delivery confirmation record yet
+                        # Return an error message indicating that an agent needs to be assigned first
+                        return JsonResponse({
+                            'success': False, 
+                            'error': 'No delivery agent assigned to this order yet. Please wait for an agent to be assigned before confirming delivery.'
+                        })
+                    
+                    # Create delivery confirmation record
+                    cursor.execute("""
+                        INSERT INTO delivery_confirmations (order_id, user_id, agent_id, customer_confirmed, agent_confirmed)
+                        VALUES (%s, %s, %s, 1, 0)
+                    """, [order_id, user_id, agent_id])
+                else:
+                    # Toggle customer confirmation
+                    cursor.execute("""
+                        UPDATE delivery_confirmations 
+                        SET customer_confirmed = 1
+                        WHERE order_id = %s
+                    """, [order_id])
+                
+                # Check if both parties have confirmed
+                cursor.execute("""
+                    SELECT agent_confirmed, customer_confirmed FROM delivery_confirmations WHERE order_id = %s
+                """, [order_id])
+                
+                agent_confirmed, customer_confirmed = cursor.fetchone()
+                
+                # If both confirmed, the trigger will automatically update the order status to Delivered
+                # We just need to commit and return the appropriate message
+                connection.commit()
+                
+                if agent_confirmed == 1 and customer_confirmed == 1:
+                    return JsonResponse({
+                        'success': True,
+                        'message': 'Delivery completed! Order status updated to Delivered.'
+                    })
+                elif agent_confirmed == 1:
+                    return JsonResponse({
+                        'success': True,
+                        'message': 'Customer confirmation recorded. Waiting for agent confirmation.'
+                    })
+                else:
+                    return JsonResponse({
+                        'success': True,
+                        'message': 'Customer confirmation recorded.'
+                    })
+                
+        except Exception as e:
+            connection.rollback()
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=500)

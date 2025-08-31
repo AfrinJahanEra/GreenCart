@@ -13,8 +13,10 @@ import Dashboard from './pages/seller/Dashboard';
 import Plants from './pages/seller/Plants';
 import Sales from './pages/seller/Sales';
 import AddPlant from './pages/seller/AddPlant';
+import EditPlant from './pages/seller/EditPlant';
 import RecordSale from './pages/seller/RecordSale';
 import DeliveryDashboard from './pages/DeliveryDashboard';
+import DashboardDel from './pages/delivery/Dashboard';
 import Assigned from './pages/delivery/Assigned';
 import Pending from './pages/delivery/Pending';
 import Completed from './pages/delivery/Completed';
@@ -30,6 +32,7 @@ import OrderDashboard from './pages/orderdashboard/OrderDashboard';
 import AllOrders from './pages/orderdashboard/AllOrders';
 import PendingOrders from './pages/orderdashboard/PendingOrders';
 import DeliveredOrders from './pages/orderdashboard/DeliveredOrders';
+import OrderDetails from './pages/OrderDetails';
 import { AuthProvider } from './contexts/AuthContext';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -74,6 +77,7 @@ function App() {
               <Route path="plants" element={<Plants />} />
               <Route path="sales" element={<Sales />} />
               <Route path="add-plant" element={<AddPlant />} />
+              <Route path="edit-plant/:plantId" element={<EditPlant />} />
               <Route path="record-sale" element={<RecordSale />} />
             </Route>
             
@@ -83,7 +87,8 @@ function App() {
                 <DeliveryDashboard />
 
             }>
-              <Route index element={<Assigned />} />
+              <Route index element={<DashboardDel />} />
+              <Route path="dashboard" element={<DashboardDel />} />
               <Route path="assigned" element={<Assigned />} />
               <Route path="pending" element={<Pending />} />
               <Route path="completed" element={<Completed />} />
@@ -115,6 +120,7 @@ function App() {
               <Route path="all" element={<AllOrders />} />
               <Route path="pending" element={<PendingOrders />} />
               <Route path="delivered" element={<DeliveredOrders />} />
+              <Route path="details/:orderId" element={<OrderDetails />} />
             </Route>
             
             <Route path="*" element={<NotFound />} />

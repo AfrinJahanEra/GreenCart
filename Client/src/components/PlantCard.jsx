@@ -30,7 +30,7 @@ const PlantCard = ({ plant }) => {
       </button>
       <Link to={`/plant/${plant.id}`} className="block overflow-hidden">
         <img 
-          src={plant.image} 
+          src={plant.image || plant.primary_image || plant.image_url || 'https://via.placeholder.com/300x300.png?text=Plant+Image'} 
           alt={plant.name} 
           className="w-full h-48 sm:h-56 md:h-64 object-cover transform hover:scale-105 transition-transform duration-500"
         />
