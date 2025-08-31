@@ -1,127 +1,113 @@
-🌿 GreenCart
+<a name="top"></a>
 
-Bridging Nature and Technology for a Greener Tomorrow
+<h1 align="center" font-style="bold">
+  $\Huge\textbf{\color{#4CAF50}GreenCart}$
+</h1>
 
-GreenCart is an easy-to-use digital system designed for plant nurseries, garden shops, and plant lovers. It streamlines plant management, inventory tracking, order processing, and delivery coordination—helping businesses save time and customers enjoy a seamless shopping experience.
+$${\color{#76C893}Bridging \space \color{#4DB6AC}Nature \space \color{#81C784}and \space \color{#AED581}Technology \space \color{#4DB6AC}for \space \color{#76C893}a \space Greener \space Tomorrow}$$
 
-👥 Team Members
+> <img src="https://github.com/user-attachments/assets/your-logo.png" align="right" width="90px"/>
+> A smart digital assistant for nurseries, garden shops, and plant lovers — helping manage stock, process orders, track deliveries, and improve customer experiences with ease.
 
-Ramisa Anan Rahman (ID: 220042105)
+<br>
 
-Ridika Naznin (ID: 220042115)
+![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
+![Django](https://img.shields.io/badge/Django-092E20?style=for-the-badge&logo=django&logoColor=white)
+![Oracle](https://img.shields.io/badge/Database-Oracle-F80000?style=for-the-badge&logo=oracle&logoColor=white)
+![Tailwind](https://img.shields.io/badge/Style-TailwindCSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
+![JWT](https://img.shields.io/badge/Auth-JWT-8E44AD?style=for-the-badge)
+![Analytics](https://img.shields.io/badge/Analytics-Reports-green?style=for-the-badge)
+![Hosting](https://img.shields.io/badge/Hosting-Vercel%20|%20Render%20|%20Oracle%20Cloud-blue?style=for-the-badge)
 
-Afrin Jahan Era (ID: 220042132)
+<br><br>
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/your-screenshot.png" width="500px"/>
+</div>
 
-📌 Overview
+---
 
-GreenCart serves as a digital assistant for plant businesses by:
+<h1>$\large\textbf{\color{#4CAF50}{User Roles}}$</h1><br>
 
-Managing plant inventories in real-time
+| $\large\text{\color{#76C893}{Role}}$ | $\large\text{\color{#F48FB1}{Description}}$ |
+| ------------- | --------------------------------------------------------------------------- |
+| **Admin**      | Manage plant list, stock, staff, reports, and user accounts |
+| **Sales Staff** | Process orders, update sales records, check stock availability |
+| **Delivery Man**     | Update delivery statuses, confirm deliveries, optimize routes |
+| **Customer**     | Browse plants, place orders, track deliveries, leave reviews |
 
-Processing orders efficiently
+---
 
-Assisting delivery management
+<h1>$\large\textbf{\color{#4CAF50}{Features}}$</h1>
 
-Generating reports and analytics
+<h3>$\large\textbf{\color{#98FB98}{Smart Inventory Management}}$</h3>
+<ul>
+<li>Real-time stock tracking across store & online</li>
+<li>Alerts when stock falls below thresholds</li>
+</ul>
 
-Enhancing customer experience with plant care guides
+<h3>$\large\textbf{\color{#00C9A7}{Seamless Order Processing}}$</h3>
+<ul>
+<li>Digital checkout with discounts</li>
+<li>Instant order confirmation</li>
+</ul>
 
-🧑‍🤝‍🧑 Roles & Responsibilities
+<h3>$\large\textbf{\color{#6BCB77}{Plant Catalog}}$</h3>
+<ul>
+<li>Detailed plant care guides with tips & seasonal availability</li>
+<li>Smart filtering (plant type, needs, toxicity alerts)</li>
+</ul>
 
-Admin: Manage plant list, stock levels, reports, user accounts
+<h3>$\large\textbf{\color{#FFD93D}{Ratings & Reviews}}$</h3>
+<ul>
+<li>Customer reviews, ratings, and feedback</li>
+<li>Community interaction through comments</li>
+</ul>
 
-Sales Staff: Process orders, update sales, check availability
+<h3>$\large\textbf{\color{#4D96FF}{Delivery Management}}$</h3>
+<ul>
+<li>Real-time delivery status updates</li>
+<li>Optimized route assignment</li>
+</ul>
 
-Delivery Personnel: Update statuses, confirm deliveries, optimize routes
+<h3>$\large\textbf{\color{#FF6B6B}{Admin Dashboard & Analytics}}$</h3>
+<ul>
+<li>Sales reports by staff, plant, or timeframe</li>
+<li>Salary and performance management</li>
+</ul>
 
-Customers: Browse, order plants, leave reviews, track deliveries
+---
 
-🚀 Motivation
+<h1>$\large\textbf{\color{#4CAF50}{Target Users}}$</h1><br>
 
-GreenCart solves the following problems in traditional plant businesses:
+| <img width="100px" src="https://github.com/user-attachments/assets/your-icon1.png" /> | <img width="100px" src="https://github.com/user-attachments/assets/your-icon2.png" /> | <img width="100px" src="https://github.com/user-attachments/assets/your-icon3.png" /> | <img width="100px" src="https://github.com/user-attachments/assets/your-icon4.png" /> |
+|:--:|:--:|:--:|:--:|
+| Plant Nurseries | Garden Shops | Delivery Teams | Plant Lovers |
 
-Messy Stock Tracking → Provides real-time inventory updates
+---
 
-Slow Order Handling → Digital order & delivery coordination
+<details>
+  <summary>
+    <h1>$\large\textbf{\color{#4CAF50}{Tech Stack}}$</h1><br>
+  </summary>
+  
+  <div align="center">
+  
+  | $\large\text{\color{#76DCF1}{Layer}}$ | $\large\text{\color{#F48FB1}{Technology}}$ | $\large\text{\color{#52CCF6}{Version}}$ |
+  |----------------------|--------------------|----------|
+  | **Frontend**         | React.js + Tailwind CSS | Latest |
+  | **Backend**          | Django + Python   | Latest |
+  | **Database**         | Oracle DB         | Enterprise |
+  | **Authentication**   | JWT               | - |
+  | **Hosting**          | Vercel (Frontend), Render (Backend), Oracle Cloud (DB) | - |
+  
+  </div>
+</details>
 
-Lack of Sales Insights → Generates reports and predictions
+---
 
-Poor Customer Engagement → Plant care guides & review system
-
-✅ Features
-
-User Management & Authentication (Role-based dashboards, JWT login, password recovery)
-
-Shopping & Cart System (Cart persistence, instant order confirmation)
-
-Plant Catalog (Detailed plant care guides, smart filtering)
-
-Ratings & Reviews System (Feedback, ratings, real-time comments)
-
-Discount & Offer System (Seasonal deals, personalized discounts, loyalty rewards)
-
-Order & Delivery Management (Real-time delivery tracking, assignment system)
-
-Admin Dashboard & Analytics (Sales reports, inventory alerts, staff monitoring)
-
-🔒 Non-Functional Requirements
-
-Performance: <3s response time, real-time stock updates
-
-Security: Encrypted sensitive data, JWT authentication
-
-Reliability: 99.9% uptime, automated daily backups
-
-Usability: Contextual help & intuitive interfaces
-
-Scalability: Supports 20% annual growth in users and transactions
-
-🛠️ Tools & Technologies
-Category	Technology Stack
-Database	Oracle Database
-Frontend	React.js, Tailwind CSS
-Backend	Python, Django REST Framework
-Authentication	JWT (JSON Web Tokens)
-Version Control	Git + GitHub
-Hosting	Render (Backend), Oracle Cloud (DB), Vercel (Frontend)
-
-
-⚙️ Installation & Setup
+<h1>$\large\textnormal{\color{#4CAF50}{Installation}}$</h1><br>
 
 Clone the repository:
-
+```console
 git clone https://github.com/your-username/GreenCart.git
 cd GreenCart
-
-
-Install dependencies:
-
-Frontend (React):
-
-cd frontend
-npm install
-npm start
-
-
-Backend (Django):
-
-cd backend
-pip install -r requirements.txt
-python manage.py runserver
-
-
-Setup Oracle Database & configure .env file with database credentials.
-
-Access the app on: http://localhost:3000
-
-📈 Future Enhancements
-
-AI-powered plant recommendation system
-
-Mobile app version for Android/iOS
-
-Integration with IoT plant monitoring devices
-
-📜 License
-
-This project is for academic purposes. You may adapt and extend it for learning and development.
