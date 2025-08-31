@@ -38,37 +38,37 @@ $${\color{#76C893}Bridging \space \color{#4DB6AC}Nature \space \color{#81C784}an
 
 <h1>$\large\textbf{\color{#4CAF50}{Features}}$</h1>
 
-### $\color{#81C784}{1. User Management \& Authentication}$
+<h3>$\large\textbf{\color{#d1ffbd}{1. User Management \& Authentication}}$</h3>
 - Easy sign-up for customers  
 - Password recovery options  
 - Different dashboards for different staff roles  
 - Admin controls for security  
 
 
-### $\color{#64B5F6}{2. Shopping \& Cart System}$
+<h3>$\large\textbf{\color{#C5E1A5}{2. Shopping \& Cart System}}$</h3>
 - Easy-to-navigate plant catalog  
 - Save items in cart for 30 days (persistent across devices)  
 - Instant order confirmation after checkout  
 
 
-### $\color{#FFB74D}{3. Plant Catalog}$
+<h3>$\large\textbf{\color{#DCEDC8}{3. Plant Catalog}}$</h3>
 - Detailed plant care guides (temperature, pruning, toxicity, seasonality)  
 - Smart filtering by plant type and needs  
 
 
-### $\color{#BA68C8}{4. Ratings \& Reviews System}$
+<h3>$\large\textbf{\color{#E6EE9C}{4. Ratings \& Reviews System}}$</h3>
 - Customers can rate and review plants  
 - Share suggestions with other users  
 - Real-time comments for interactive discussions  
 
 
-### $\color{#4DD0E1}{5. Discount \& Offer System}$
+<h3>$\large\textbf{\color{#FFF59D}{5. Discount \& Offer System}}$</h3>
 - Personalized discounts for customers with abandoned carts  
 - Automatic reminders and loyalty rewards (e.g., 1+ year shoppers)  
 - Seasonal deals & promotional offers  
 
 
-### $\color{#FF8A65}{6. Order \& Delivery Management}$
+<h3>$\large\textbf{\color{#FFE082}{6. Order \& Delivery Management}}$</h3>
 - Customers place orders digitally  
 - Delivery agent assigned automatically  
 - Agents contact customers via chat or call  
@@ -76,7 +76,7 @@ $${\color{#76C893}Bridging \space \color{#4DB6AC}Nature \space \color{#81C784}an
 - Payment status updated after successful delivery  
 
 
-### $\color{#AED581}{7. Admin Dashboard \& Analytics}$
+<h3>$\large\textbf{\color{#FFCC80}{7. Admin Dashboard \& Analytics}}$</h3>
 - Manage orders, assign delivery staff, and handle salaries  
 - Track inventory levels with automated low-stock alerts  
 - Generate sales reports (daily, weekly, monthly)  
@@ -86,6 +86,7 @@ $${\color{#76C893}Bridging \space \color{#4DB6AC}Nature \space \color{#81C784}an
 ---
 
 <h1>$\large\textbf{\color{#4CAF50}{Target Users}}$</h1><br>
+
 | Plant Nurseries | Garden Shops | Plant Lovers | 
 |:--:|:--:|:--:|
 
@@ -139,6 +140,7 @@ techsage/
 
 <h1>$\large\textnormal{\color{#4CAF50}{Installation}}$</h1><br>
 Clone the repository
+
 ```console
 https://github.com/AfrinJahanEra/GreenCart.git
 ```
