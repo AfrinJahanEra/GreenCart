@@ -34,7 +34,7 @@ $${\color{#76C893}Bridging \space \color{#4DB6AC}Nature \space \color{#81C784}an
 | **Customer**     | Browse plants, place orders, track deliveries, leave reviews |
 
 </div>
----
+
 
 <h1>$\large\textbf{\color{#4CAF50}{Features}}$</h1>
 
@@ -47,7 +47,6 @@ GreenCart makes account management easy for everyone. Customers can sign up quic
 - Different dashboards for different staff  
 - Admin controls for security  
 
----
 
 <h3>$\large\textbf{\color{#C5E1A5}{2. Shopping \& Cart System}}$</h3>
 Users can browse a vibrant selection of plants and easily narrow down their choices with filters. Their cart saves items for 30 days, so they can continue buying later, even on a different device. After placing an order, they receive an instant confirmation.  
@@ -56,7 +55,6 @@ Users can browse a vibrant selection of plants and easily narrow down their choi
 - Easy-to-navigate plant catalog  
 - Save items for later purchase  
 
----
 
 <h3>$\large\textbf{\color{#DCEDC8}{3. Plant Catalog}}$</h3>
 More than just an inventory, GreenCart's catalog serves as a horticultural knowledge base. Each plant features comprehensive care guides like ideal temperatures, pruning techniques, toxicity alerts, and seasonal availability calendars.  
@@ -65,12 +63,10 @@ More than just an inventory, GreenCart's catalog serves as a horticultural knowl
 - Detailed plant care guides  
 - Smart filtering by plant type and needs  
 
----
 
 <h3>$\large\textbf{\color{#E6EE9C}{4. Ratings \& Reviews System}}$</h3>
 On this platform, customers can review plants or suggest them to others. They can also rate the plants so everyone can get accurate information. Additionally, they can interact with each other through real-time comments.  
 
----
 
 <h3>$\large\textbf{\color{#FFF59D}{5. Discount \& Offer System}}$</h3>
 GreenCart’s promotion tools make marketing easy and effective. Instead of just basic coupon codes, the system also offers:  
@@ -78,7 +74,6 @@ GreenCart’s promotion tools make marketing easy and effective. Instead of just
 - Automatic reminders (with rewards for loyal customers, like those shopping for 1+ years)  
 - Seasonal deals & special offers  
 
----
 
 <h3>$\large\textbf{\color{#FFE082}{6. Order \& Delivery Management}}$</h3>
 A smooth delivery process where customers get real-time updates and control over their orders.  
@@ -86,21 +81,20 @@ A smooth delivery process where customers get real-time updates and control over
 - The agent contacts the customer via chat or call to coordinate delivery.  
 - After successful delivery, the payment status is marked as complete.  
 
----
 
 <h3>$\large\textbf{\color{#FFCC80}{7. Admin Dashboard \& Analytics}}$</h3>
 The admin dashboard gives business owners full control over their platform. From here, they can oversee orders, assign delivery staff, and manage salaries in one place. The system tracks inventory levels and sends automatic alerts when stock is running low. Admins can also monitor sales performance, check daily earnings, and identify growth opportunities—all through an easy-to-use interface.  
 
----
 
 ---
 
 <h1>$\large\textbf{\color{#4CAF50}{Target Users}}$</h1><br>
 
+| Plant Nurseries | Garden Shops | Plant Lovers | 
 |:--:|:--:|:--:|
-| Plant Nurseries | Garden Shops | Plant Lovers |
 
 ---
+
 
 <details>
   <summary>
@@ -120,45 +114,190 @@ The admin dashboard gives business owners full control over their platform. From
   </div>
 </details>
 
+
 ---
+
 
 <details>
   <summary>
-    <h1>$\large\textbf{\color{#4CAF50}{Database Design}}$</h1><br>
-  </summary> 
+    <h1>$\large\textbf{\color{green}{File Structure}}$</h1><br>
+  </summary>
+  
+  ```console
+techsage/
+├── backend/
+│   ├── manage.py
+│   └── ...
+|   └── greencart.sql
+├── frontend/
+│   ├── index.html
+│   └── ...
+├── .gitignore
+├── README.md
+└── requirements.txt 
+```
 </details>
+
 
 ---
 
 <h1>$\large\textnormal{\color{#4CAF50}{Installation}}$</h1><br>
 
-Clone the repository:
+Clone the repository
 ```console
-git clone https://github.com/your-username/GreenCart.git
-cd GreenCart
+https://github.com/AfrinJahanEra/GreenCart.git
+```
+Or download the `zip` file, then extract it in a folder.
+
+<h1>$\large\textnormal{\color{green}{How To Run}}$</h1>
+
+<h2>$\large\textnormal{\color{green}{Prerequisites}}$</h2>
+
+- Install `Python` and `React.js` and `Oracle`(optional).
+- Open account in [`Cloudinary`](https://cloudinary.com/) and collect credentials from there.
+
+<h2>$\large\textnormal{\color{green}{Server Directory}}$</h2>
+
+Then go to the directory path(where the code is)
+```console
+cd "path\to\directory"
+```
+Then open right-click and click `open in Terminal`. Then in terminal run
+```console
+code .
+```
+This will directly take you to the VS Code interface. In `Server` directory, Open terminal and run
+
+For `Linux/MacOS`
+```console
+python -m venv env
+source env/bin/activate
+```
+For `Windows`
+```console
+python -m venv env
+.\\env\\Scripts\\activate
 ```
 
-<h2>$\large\textnormal{\color{#4CAF50}{Backend Setup (Django)}}$</h2>
+Which will create the environment. Inside this, install the dependencies.
 
 ```console
-cd backend
-python -m venv env
-source env/bin/activate    # (Linux/Mac)
-.\env\Scripts\activate     # (Windows)
 pip install -r requirements.txt
+```
+This will install all the `pip` dependencies required to run this code. If it doesn't work, run this in `Command Prompt` or in  `VS Code Terminal`
+
+```console
+pip install Django python-dotenv djangorestframework django-cors-headers channels pytz oracledb dnspython certify daphne cloudinary requests
+```
+
+Then run in `Server` directory
+```console
 python manage.py runserver
 ```
 
-<h2>$\large\textnormal{\color{#4CAF50}{Frontend Setup (React)}}$</h2>
-
-```console
-cd frontend
-npm install
-npm start
+If it's missing the `static directory` it will give this error
+```python
+django.core.exceptions.ImproperlyConfigured: 
+You're using the staticfiles app without having set the required STATIC_URL setting.
 ```
 
-> [!IMPORTANT]
-> Configure .env file with your Oracle DB credentials before running.
+This happens when:
+- `django.contrib.staticfiles` is in INSTALLED_APPS
+- But forgot to define `STATIC_URL` (and optionally STATICFILES_DIRS)
+
+Add this to `settings.py`:
+```python
+import os
+
+# Required
+STATIC_URL = '/static/'
+
+# Optional (for development)
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),
+]
+
+# Optional (for production use)
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+```
+
+Create the static directory (if needed):
+```console
+mkdir static
+```
+
+<h2>$\large\textnormal{\color{green}{Client Directory}}$</h2>
+
+In `Client` directory, Open terminal and run
+ ```console
+npm install
+npm run dev
+```
+
+Make sure `Vite` is installed as a dev dependency in your project. Check `package.json` inside `Client/`. If something like this is present:
+```json
+"devDependencies": {
+  "vite": "^5.0.0",  // or another version
+  ...
+}
+```
+It means `Vite` is present. If it's missing, install it:
+```console
+npm install vite --save-dev
+```
+> [!TIP]
+> To fix vulnerabilities, run this :
+> ```console
+> npm audit fix
+> ```
+
+Or to fix all issues automatically (including breaking changes):
+```console
+npm audit fix --force
+```
+
+> [!CAUTION] 
+> Be cautious with `--force`. It may upgrade packages that break project.
+
+and serve it with Django or a production web server. Don’t deploy with `npm run build`.
+
+> [!NOTE]  
+> The app runs on `http://localhost:8000` by default. If port is taken, use other ports.
+
+$${\color{#2196F3}You \space can \space change \space the \space port \space (-p) \space or \space host \space (-b) \space as \space needed.}$$
+
+<h1>$\large\textnormal{\color{#EE4B2B}{‼ Things To Consider}}$</h1>
+
+List this in `.env.example` file do not commit this `.env` in github
+
+```console
+SECRET_KEY=your-django-secret
+DEBUG=True
+MONGO_URL=mongodb://localhost:27017/techsage
+REDIS_URL=redis://localhost:6379
+ALLOWED_HOSTS=127.0.0.1,localhost
+```
+
+> Commit a `.env.example` file instead, which shows others what keys they need to set (but with no real values)
+
+Check port conflicts
+
+<img src="https://github.com/user-attachments/assets/3a3e6527-24d8-4f28-958f-9f17563a9dcb" width=100px align="right">
+
+<div align="center">
+
+| $\large\text{\color{#76DCF1}{Service}}$ | $\large\text{\color{#76DCF1}{Default Port}}$ |
+|-----------------------------------------|----------------------------------------------|
+| Daphne / Django    | `8000`       |
+| React dev server   | `5173`       |
+
+</div>
+
+Make sure none of these ports are already in use.
+
+> [!WARNING]  
+> Browsers block WebSocket connections on `HTTP` if the main site is `HTTPS`.
+
 
 <h1>$\large\textnormal{\color{#2196F3}{Team Members}}$</h1>
 
