@@ -6,7 +6,6 @@
 
 $${\color{#76C893}Bridging \space \color{#4DB6AC}Nature \space \color{#81C784}and \space \color{#AED581}Technology \space \color{#4DB6AC}for \space \color{#76C893}a \space Greener \space Tomorrow}$$
 
-> <img src="https://github.com/user-attachments/assets/your-logo.png" align="right" width="90px"/>
 > A smart digital assistant for nurseries, garden shops, and plant lovers — helping manage stock, process orders, track deliveries, and improve customer experiences with ease.
 
 <br>
@@ -20,13 +19,12 @@ $${\color{#76C893}Bridging \space \color{#4DB6AC}Nature \space \color{#81C784}an
 ![Hosting](https://img.shields.io/badge/Hosting-Vercel%20|%20Render%20|%20Oracle%20Cloud-blue?style=for-the-badge)
 
 <br><br>
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/your-screenshot.png" width="500px"/>
-</div>
 
 ---
 
 <h1>$\large\textbf{\color{#4CAF50}{User Roles}}$</h1><br>
+
+<div align="center">
 
 | $\large\text{\color{#76C893}{Role}}$ | $\large\text{\color{#F48FB1}{Description}}$ |
 | ------------- | --------------------------------------------------------------------------- |
@@ -35,53 +33,72 @@ $${\color{#76C893}Bridging \space \color{#4DB6AC}Nature \space \color{#81C784}an
 | **Delivery Man**     | Update delivery statuses, confirm deliveries, optimize routes |
 | **Customer**     | Browse plants, place orders, track deliveries, leave reviews |
 
+</div>
 ---
 
 <h1>$\large\textbf{\color{#4CAF50}{Features}}$</h1>
 
-<h3>$\large\textbf{\color{#98FB98}{Smart Inventory Management}}$</h3>
-<ul>
-<li>Real-time stock tracking across store & online</li>
-<li>Alerts when stock falls below thresholds</li>
-</ul>
+<h3>$\large\textbf{\color{#A5D6A7}{1. User Management \& Authentication}}$</h3>
+GreenCart makes account management easy for everyone. Customers can sign up quickly and reset passwords if forgotten. Staff get special access based on their job – admins control everything, sales people see customer info, and delivery staff view order details.  
 
-<h3>$\large\textbf{\color{#00C9A7}{Seamless Order Processing}}$</h3>
-<ul>
-<li>Digital checkout with discounts</li>
-<li>Instant order confirmation</li>
-</ul>
+**Key Features:**  
+- Easy sign-up for customers  
+- Password recovery options  
+- Different dashboards for different staff  
+- Admin controls for security  
 
-<h3>$\large\textbf{\color{#6BCB77}{Plant Catalog}}$</h3>
-<ul>
-<li>Detailed plant care guides with tips & seasonal availability</li>
-<li>Smart filtering (plant type, needs, toxicity alerts)</li>
-</ul>
+---
 
-<h3>$\large\textbf{\color{#FFD93D}{Ratings and Reviews}}$</h3>
-<ul>
-<li>Customer reviews, ratings, and feedback</li>
-<li>Community interaction through comments</li>
-</ul>
+<h3>$\large\textbf{\color{#C5E1A5}{2. Shopping \& Cart System}}$</h3>
+Users can browse a vibrant selection of plants and easily narrow down their choices with filters. Their cart saves items for 30 days, so they can continue buying later, even on a different device. After placing an order, they receive an instant confirmation.  
 
-<h3>$\large\textbf{\color{#4D96FF}{Delivery Management}}$</h3>
-<ul>
-<li>Real-time delivery status updates</li>
-<li>Optimized route assignment</li>
-</ul>
+**Key Features:**  
+- Easy-to-navigate plant catalog  
+- Save items for later purchase  
 
-<h3>$\large\textbf{\color{#FF6B6B}{Admin Dashboard and Analytics}}$</h3>
-<ul>
-<li>Sales reports by staff, plant, or timeframe</li>
-<li>Salary and performance management</li>
-</ul>
+---
+
+<h3>$\large\textbf{\color{#DCEDC8}{3. Plant Catalog}}$</h3>
+More than just an inventory, GreenCart's catalog serves as a horticultural knowledge base. Each plant features comprehensive care guides like ideal temperatures, pruning techniques, toxicity alerts, and seasonal availability calendars.  
+
+**Key Features:**  
+- Detailed plant care guides  
+- Smart filtering by plant type and needs  
+
+---
+
+<h3>$\large\textbf{\color{#E6EE9C}{4. Ratings \& Reviews System}}$</h3>
+On this platform, customers can review plants or suggest them to others. They can also rate the plants so everyone can get accurate information. Additionally, they can interact with each other through real-time comments.  
+
+---
+
+<h3>$\large\textbf{\color{#FFF59D}{5. Discount \& Offer System}}$</h3>
+GreenCart’s promotion tools make marketing easy and effective. Instead of just basic coupon codes, the system also offers:  
+- Personalized discounts (for customers who left items in their cart)  
+- Automatic reminders (with rewards for loyal customers, like those shopping for 1+ years)  
+- Seasonal deals & special offers  
+
+---
+
+<h3>$\large\textbf{\color{#FFE082}{6. Order \& Delivery Management}}$</h3>
+A smooth delivery process where customers get real-time updates and control over their orders.  
+- Customers place an order, and a delivery agent is assigned to them.  
+- The agent contacts the customer via chat or call to coordinate delivery.  
+- After successful delivery, the payment status is marked as complete.  
+
+---
+
+<h3>$\large\textbf{\color{#FFCC80}{7. Admin Dashboard \& Analytics}}$</h3>
+The admin dashboard gives business owners full control over their platform. From here, they can oversee orders, assign delivery staff, and manage salaries in one place. The system tracks inventory levels and sends automatic alerts when stock is running low. Admins can also monitor sales performance, check daily earnings, and identify growth opportunities—all through an easy-to-use interface.  
+
+---
 
 ---
 
 <h1>$\large\textbf{\color{#4CAF50}{Target Users}}$</h1><br>
 
-| <img width="100px" src="https://github.com/user-attachments/assets/your-icon1.png" /> | <img width="100px" src="https://github.com/user-attachments/assets/your-icon2.png" /> | <img width="100px" src="https://github.com/user-attachments/assets/your-icon3.png" /> | <img width="100px" src="https://github.com/user-attachments/assets/your-icon4.png" /> |
-|:--:|:--:|:--:|:--:|
-| Plant Nurseries | Garden Shops | Delivery Teams | Plant Lovers |
+|:--:|:--:|:--:|
+| Plant Nurseries | Garden Shops | Plant Lovers |
 
 ---
 
@@ -108,12 +125,7 @@ $${\color{#76C893}Bridging \space \color{#4DB6AC}Nature \space \color{#81C784}an
 <details>
   <summary>
     <h1>$\large\textbf{\color{#4CAF50}{Database Design}}$</h1><br>
-  </summary>
-  
-  <div align="center">
-    <img src="https://github.com/user-attachments/assets/your-er-diagram.png" width="600px"/>
-  </div>
-  
+  </summary> 
 </details>
 
 ---
@@ -162,7 +174,7 @@ npm start
 
 <h1>$\large\textnormal{\color{#2196F3}{License}}$</h1>
 
-> <img src="https://github.com/user-attachments/assets/da1a44dc-a69d-4b37-8330-30214c6e768f" align = "right" width = "60px">
-
 
 > $${\color{lightblue}This \space \color{#5EEAD4}project \space \color{#FBF3D4}is \space \color{#D4D4FF}under}$$ [MIT License](https://github.com/AfrinJahanEra/TechSage?tab=MIT-1-ov-file)
+
+<a href="#top">Back to top</a>
