@@ -105,9 +105,50 @@ $${\color{#76C893}Bridging \space \color{#4DB6AC}Nature \space \color{#81C784}an
 
 ---
 
+<details>
+  <summary>
+    <h1>$\large\textbf{\color{#4CAF50}{Database Design}}$</h1><br>
+  </summary>
+  
+  <div align="center">
+    <img src="https://github.com/user-attachments/assets/your-er-diagram.png" width="600px"/>
+  </div>
+  
+</details>
+
+---
+
 <h1>$\large\textnormal{\color{#4CAF50}{Installation}}$</h1><br>
 
 Clone the repository:
 ```console
 git clone https://github.com/your-username/GreenCart.git
 cd GreenCart
+<h2>$\large\textnormal{\color{#4CAF50}{Backend Setup (Django)}}$</h2>
+console
+Copy code
+cd backend
+python -m venv env
+source env/bin/activate    # (Linux/Mac)
+.\env\Scripts\activate     # (Windows)
+pip install -r requirements.txt
+python manage.py runserver
+<h2>$\large\textnormal{\color{#4CAF50}{Frontend Setup (React)}}$</h2>
+console
+Copy code
+cd frontend
+npm install
+npm start
+[!IMPORTANT]
+Configure .env file with your Oracle DB credentials before running.
+
+<h1>$\large\textnormal{\color{#4CAF50}{Team Members}}$</h1> <div align="center">
+$\large\text{\color{#DAA5A4}{Name}}$	$\large\text{\color{#D6C8FF}{Github}}$	$\large\text{\color{#C8A2C8}{Contribution}}$
+Ramisa Anan Rahman	github	Frontend
+Ridika Naznin	github	Backend
+Afrin Jahan Era	github	Full Stack
+
+</div>
+<h1>$\large\textnormal{\color{#4CAF50}{License}}$</h1>
+<img src="https://github.com/user-attachments/assets/da1a44dc-a69d-4b37-8330-30214c6e768f" align = "right" width = "60px">
+<a href="#top">Back to top</a>
