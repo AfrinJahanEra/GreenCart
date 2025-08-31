@@ -38,58 +38,54 @@ $${\color{#76C893}Bridging \space \color{#4DB6AC}Nature \space \color{#81C784}an
 
 <h1>$\large\textbf{\color{#4CAF50}{Features}}$</h1>
 
-<h3>$\large\textbf{\color{#A5D6A7}{1. User Management \& Authentication}}$</h3>
-GreenCart makes account management easy for everyone. Customers can sign up quickly and reset passwords if forgotten. Staff get special access based on their job – admins control everything, sales people see customer info, and delivery staff view order details.  
-
-**Key Features:**  
+### $\color{#81C784}{1. User Management \& Authentication}$
 - Easy sign-up for customers  
 - Password recovery options  
-- Different dashboards for different staff  
+- Different dashboards for different staff roles  
 - Admin controls for security  
 
 
-<h3>$\large\textbf{\color{#C5E1A5}{2. Shopping \& Cart System}}$</h3>
-Users can browse a vibrant selection of plants and easily narrow down their choices with filters. Their cart saves items for 30 days, so they can continue buying later, even on a different device. After placing an order, they receive an instant confirmation.  
-
-**Key Features:**  
+### $\color{#64B5F6}{2. Shopping \& Cart System}$
 - Easy-to-navigate plant catalog  
-- Save items for later purchase  
+- Save items in cart for 30 days (persistent across devices)  
+- Instant order confirmation after checkout  
 
 
-<h3>$\large\textbf{\color{#DCEDC8}{3. Plant Catalog}}$</h3>
-More than just an inventory, GreenCart's catalog serves as a horticultural knowledge base. Each plant features comprehensive care guides like ideal temperatures, pruning techniques, toxicity alerts, and seasonal availability calendars.  
-
-**Key Features:**  
-- Detailed plant care guides  
+### $\color{#FFB74D}{3. Plant Catalog}$
+- Detailed plant care guides (temperature, pruning, toxicity, seasonality)  
 - Smart filtering by plant type and needs  
 
 
-<h3>$\large\textbf{\color{#E6EE9C}{4. Ratings \& Reviews System}}$</h3>
-On this platform, customers can review plants or suggest them to others. They can also rate the plants so everyone can get accurate information. Additionally, they can interact with each other through real-time comments.  
+### $\color{#BA68C8}{4. Ratings \& Reviews System}$
+- Customers can rate and review plants  
+- Share suggestions with other users  
+- Real-time comments for interactive discussions  
 
 
-<h3>$\large\textbf{\color{#FFF59D}{5. Discount \& Offer System}}$</h3>
-GreenCart’s promotion tools make marketing easy and effective. Instead of just basic coupon codes, the system also offers:  
-- Personalized discounts (for customers who left items in their cart)  
-- Automatic reminders (with rewards for loyal customers, like those shopping for 1+ years)  
-- Seasonal deals & special offers  
+### $\color{#4DD0E1}{5. Discount \& Offer System}$
+- Personalized discounts for customers with abandoned carts  
+- Automatic reminders and loyalty rewards (e.g., 1+ year shoppers)  
+- Seasonal deals & promotional offers  
 
 
-<h3>$\large\textbf{\color{#FFE082}{6. Order \& Delivery Management}}$</h3>
-A smooth delivery process where customers get real-time updates and control over their orders.  
-- Customers place an order, and a delivery agent is assigned to them.  
-- The agent contacts the customer via chat or call to coordinate delivery.  
-- After successful delivery, the payment status is marked as complete.  
+### $\color{#FF8A65}{6. Order \& Delivery Management}$
+- Customers place orders digitally  
+- Delivery agent assigned automatically  
+- Agents contact customers via chat or call  
+- Real-time delivery status updates  
+- Payment status updated after successful delivery  
 
 
-<h3>$\large\textbf{\color{#FFCC80}{7. Admin Dashboard \& Analytics}}$</h3>
-The admin dashboard gives business owners full control over their platform. From here, they can oversee orders, assign delivery staff, and manage salaries in one place. The system tracks inventory levels and sends automatic alerts when stock is running low. Admins can also monitor sales performance, check daily earnings, and identify growth opportunities—all through an easy-to-use interface.  
+### $\color{#AED581}{7. Admin Dashboard \& Analytics}$
+- Manage orders, assign delivery staff, and handle salaries  
+- Track inventory levels with automated low-stock alerts  
+- Generate sales reports (daily, weekly, monthly)  
+- Monitor staff performance and revenue trends
 
 
 ---
 
 <h1>$\large\textbf{\color{#4CAF50}{Target Users}}$</h1><br>
-
 | Plant Nurseries | Garden Shops | Plant Lovers | 
 |:--:|:--:|:--:|
 
@@ -142,7 +138,6 @@ techsage/
 ---
 
 <h1>$\large\textnormal{\color{#4CAF50}{Installation}}$</h1><br>
-
 Clone the repository
 ```console
 https://github.com/AfrinJahanEra/GreenCart.git
