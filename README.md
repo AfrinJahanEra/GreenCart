@@ -151,4 +151,36 @@ Afrin Jahan Era	github	Full Stack
 </div>
 <h1>$\large\textnormal{\color{#4CAF50}{License}}$</h1>
 <img src="https://github.com/user-attachments/assets/da1a44dc-a69d-4b37-8330-30214c6e768f" align = "right" width = "60px">
+𝑇
+ℎ
+𝑖
+𝑠
+ 
+𝑝
+𝑟
+𝑜
+𝑗
+𝑒
+𝑐
+𝑡
+ 
+𝑖
+𝑠
+ 
+𝑙
+𝑖
+𝑐
+𝑒
+𝑛
+𝑠
+𝑒
+𝑑
+ 
+𝑢
+𝑛
+𝑑
+𝑒
+𝑟
+This project is licensed under MIT License
+
 <a href="#top">Back to top</a>
