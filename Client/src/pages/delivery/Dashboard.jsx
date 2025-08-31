@@ -8,24 +8,8 @@ const Dashboard = () => {
   const { dashboardData, loading, error, refreshAllData } = useDeliveryAgent(user?.user_id);
   
   const stats = dashboardData?.stats || {};
-  const agentInfo = dashboardData?.agent_info || {};
-  const pendingDeliveries = dashboardData?.pending_assignments?.filter(delivery => 
-    delivery.agent_id && delivery.order_status !== 'Delivered'
-  ) || [];
-  const completedDeliveries = dashboardData?.completed_assignments || [];
-  const recentHistory = dashboardData?.history?.slice(0, 5) || [];
-
-  // Use agent info from API if available, otherwise fall back to user info
-  const displayName = agentInfo.first_name && agentInfo.last_name ? 
-    `${agentInfo.first_name} ${agentInfo.last_name}` : 
-    `${user?.first_name || ''} ${user?.last_name || ''}`;
-  const displayEmail = agentInfo.email || user?.email || 'No email';
-  const displayPhone = agentInfo.phone || user?.phone || 'No phone';
-  const initials = agentInfo.first_name && agentInfo.last_name ? 
-    `${agentInfo.first_name[0]}${agentInfo.last_name[0]}` : 
-    `${user?.first_name?.[0] || 'D'}${user?.last_name?.[0] || 'A'}`;
-  const vehicleInfo = agentInfo.vehicle_type ? 
-    `Vehicle: ${agentInfo.vehicle_type}` : 'Vehicle: Not specified';
+  const pendingOrders = dashboardData?.pending_orders || [];
+  const completedOrders = dashboardData?.completed_orders || [];
 
   if (loading.dashboard) {
     return (
@@ -34,6 +18,29 @@ const Dashboard = () => {
       </div>
     );
   }
+
+  // Function to get status badge color
+  const getStatusBadgeClass = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'shipped':
+        return 'bg-blue-100 text-blue-800';
+      case 'delivered':
+        return 'bg-green-100 text-green-800';
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'cancelled':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  // Function to format date
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
 
   return (
     <div className="space-y-6">
@@ -50,27 +57,7 @@ const Dashboard = () => {
           </div>
         </div>
       )}
-      {/* Personal Information Header */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-[#224229] flex items-center justify-center text-white text-2xl font-bold">
-            {initials}
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">
-              {displayName.trim() || 'Delivery Agent'}
-            </h1>
-            <p className="text-gray-600">Delivery Agent {agentInfo.agent_id ? `(ID: ${agentInfo.agent_id})` : ''}</p>
-            <p className="text-sm text-gray-500">{displayEmail}</p>
-            <p className="text-sm text-gray-500">{displayPhone}</p>
-            <p className="text-sm text-gray-500">{vehicleInfo}</p>
-            {agentInfo.license_number && (
-              <p className="text-sm text-gray-500">License: {agentInfo.license_number}</p>
-            )}
-          </div>
-        </div>
-      </div>
-
+      
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white rounded-lg shadow p-6">
@@ -82,7 +69,7 @@ const Dashboard = () => {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Total Deliveries</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.total_deliveries || 0}</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.total_assignments || 0}</p>
             </div>
           </div>
         </div>
@@ -96,7 +83,7 @@ const Dashboard = () => {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Pending Deliveries</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.pending_deliveries || 0}</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.pending_assignments || 0}</p>
             </div>
           </div>
         </div>
@@ -110,7 +97,7 @@ const Dashboard = () => {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Completed Deliveries</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.completed_deliveries || 0}</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.completed_assignments || 0}</p>
             </div>
           </div>
         </div>
@@ -130,126 +117,125 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Current Status */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pending Deliveries Summary */}
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-medium text-gray-900">
-              My Pending Deliveries ({pendingDeliveries.length})
-            </h3>
-          </div>
-          <div className="p-6">
-            {pendingDeliveries.length > 0 ? (
-              <div className="space-y-4">
-                {pendingDeliveries.slice(0, 3).map(delivery => (
-                  <div key={delivery.order_id} className="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
-                    <div>
-                      <p className="font-medium text-gray-900">#{delivery.order_number}</p>
-                      <p className="text-sm text-gray-600">{delivery.customer_name}</p>
-                      <p className="text-xs text-orange-600">{delivery.order_status}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium text-gray-900">${(delivery.total_amount || 0).toFixed(2)}</p>
-                      <p className="text-xs text-gray-500">
-                        {delivery.estimated_delivery_date ? 
-                          new Date(delivery.estimated_delivery_date).toLocaleDateString() : 
-                          'No date set'}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                {pendingDeliveries.length > 3 && (
-                  <p className="text-center text-sm text-gray-500 pt-2">
-                    +{pendingDeliveries.length - 3} more pending deliveries
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="mt-2 text-sm text-gray-500">No pending deliveries</p>
-              </div>
-            )}
-          </div>
+      {/* Pending Orders Section */}
+      <div className="bg-white rounded-lg shadow">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold" style={{ color: theme.colors.primary }}>Pending Deliveries</h2>
         </div>
-
-        {/* Recent Completed Deliveries */}
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-medium text-gray-900">
-              Recent Completed Deliveries ({completedDeliveries.length})
-            </h3>
-          </div>
-          <div className="p-6">
-            {completedDeliveries.length > 0 ? (
-              <div className="space-y-4">
-                {completedDeliveries.slice(0, 3).map(delivery => (
-                  <div key={delivery.order_id} className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                    <div>
-                      <p className="font-medium text-gray-900">#{delivery.order_number}</p>
-                      <p className="text-sm text-gray-600">{delivery.customer_name}</p>
-                      <p className="text-xs text-green-600">
-                        {delivery.customer_confirmed && delivery.agent_confirmed ? 
-                          'Fully Confirmed' : 'Awaiting Confirmation'}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium text-gray-900">${(delivery.total_amount || 0).toFixed(2)}</p>
-                      <p className="text-xs text-gray-500">
-                        {delivery.actual_delivery_date ? 
-                          new Date(delivery.actual_delivery_date).toLocaleDateString() : 
-                          'Recently completed'}
-                      </p>
+        <div className="p-6">
+          {pendingOrders.length > 0 ? (
+            <div className="space-y-4">
+              {pendingOrders.map((order) => (
+                <div key={order.order_id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                  <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+                    <div className="flex-1">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
+                        <div>
+                          <h3 className="font-medium text-gray-900">Order #{order.order_number}</h3>
+                          <p className="text-sm text-gray-500">{formatDate(order.order_date)}</p>
+                        </div>
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusBadgeClass(order.order_status)}`}>
+                          {order.order_status}
+                        </span>
+                      </div>
+                      
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm font-medium text-gray-700">Customer</p>
+                          <p className="text-sm text-gray-900">{order.customer_name}</p>
+                          <p className="text-sm text-gray-500">{order.customer_phone}</p>
+                        </div>
+                        
+                        <div>
+                          <p className="text-sm font-medium text-gray-700">Delivery Address</p>
+                          <p className="text-sm text-gray-900">{order.delivery_address}</p>
+                          {order.delivery_notes && (
+                            <p className="text-sm text-gray-500">Notes: {order.delivery_notes}</p>
+                          )}
+                        </div>
+                        
+                        <div>
+                          <p className="text-sm font-medium text-gray-700">Items</p>
+                          <p className="text-sm text-gray-900">{order.order_items}</p>
+                        </div>
+                        
+                        <div>
+                          <p className="text-sm font-medium text-gray-700">Amount</p>
+                          <p className="text-sm text-gray-900">${order.total_amount}</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                ))}
-                {completedDeliveries.length > 3 && (
-                  <p className="text-center text-sm text-gray-500 pt-2">
-                    +{completedDeliveries.length - 3} more completed deliveries
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="mt-2 text-sm text-gray-500">No completed deliveries yet</p>
-              </div>
-            )}
-          </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              No pending deliveries at the moment
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Performance Metrics */}
-      {stats.completion_rate !== undefined && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Performance Metrics</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="text-center">
-              <p className="text-3xl font-bold" style={{ color: theme.colors.primary }}>
-                {stats.completion_rate || 0}%
-              </p>
-              <p className="text-sm text-gray-600">Completion Rate</p>
-            </div>
-            <div className="text-center">
-              <p className="text-3xl font-bold" style={{ color: theme.colors.primary }}>
-                ${(stats.avg_earnings_per_delivery || 0).toFixed(2)}
-              </p>
-              <p className="text-sm text-gray-600">Avg. Earnings per Delivery</p>
-            </div>
-            <div className="text-center">
-              <p className="text-3xl font-bold" style={{ color: theme.colors.primary }}>
-                {recentHistory.length}
-              </p>
-              <p className="text-sm text-gray-600">Recent Activities (30 days)</p>
-            </div>
-          </div>
+      {/* Completed Orders Section */}
+      <div className="bg-white rounded-lg shadow">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold" style={{ color: theme.colors.primary }}>Completed Deliveries</h2>
         </div>
-      )}
+        <div className="p-6">
+          {completedOrders.length > 0 ? (
+            <div className="space-y-4">
+              {completedOrders.map((order) => (
+                <div key={order.order_id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                  <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+                    <div className="flex-1">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
+                        <div>
+                          <h3 className="font-medium text-gray-900">Order #{order.order_number}</h3>
+                          <p className="text-sm text-gray-500">{formatDate(order.order_date)}</p>
+                        </div>
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusBadgeClass(order.order_status)}`}>
+                          {order.order_status}
+                        </span>
+                      </div>
+                      
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm font-medium text-gray-700">Customer</p>
+                          <p className="text-sm text-gray-900">{order.customer_name}</p>
+                          <p className="text-sm text-gray-500">{order.customer_phone}</p>
+                        </div>
+                        
+                        <div>
+                          <p className="text-sm font-medium text-gray-700">Delivery Address</p>
+                          <p className="text-sm text-gray-900">{order.delivery_address}</p>
+                          {order.delivery_notes && (
+                            <p className="text-sm text-gray-500">Notes: {order.delivery_notes}</p>
+                          )}
+                        </div>
+                        
+                        <div>
+                          <p className="text-sm font-medium text-gray-700">Items</p>
+                          <p className="text-sm text-gray-900">{order.order_items}</p>
+                        </div>
+                        
+                        <div>
+                          <p className="text-sm font-medium text-gray-700">Amount</p>
+                          <p className="text-sm text-gray-900">${order.total_amount}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              No completed deliveries yet
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

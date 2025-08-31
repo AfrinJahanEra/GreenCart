@@ -35,7 +35,7 @@ const Pending = () => {
     if (!result.success) {
       alert(`Error: ${result.error}`);
     } else {
-      alert('Delivery marked as completed! Waiting for customer confirmation.');
+      alert(result.message);
       // Refresh the pending deliveries list
       const updatedOrders = await fetchPendingOrders();
       setPendingDeliveries(updatedOrders || []);

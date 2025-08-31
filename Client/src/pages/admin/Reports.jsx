@@ -287,101 +287,143 @@ const Reports = () => {
       </div>
       
       {activeTab === 'apply' && (
-        <>
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold mb-4" style={{ color: theme.colors.primary }}>Low Stock Alerts</h2>
-            <div className="flex gap-4 mb-4">
-              <button
-                onClick={() => handleFilterChange(0)}
-                className={`px-4 py-2 rounded-lg transition-colors ${
-                  filterResolved === 0 ? 'bg-[#224229] text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-              >
-                Unresolved Alerts
-              </button>
-              <button
-                onClick={() => handleFilterChange(1)}
-                className={`px-4 py-2 rounded-lg transition-colors ${
-                  filterResolved === 1 ? 'bg-[#224229] text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-              >
-                All Alerts
-              </button>
-            </div>
-            {loading.lowStockAlerts && <div className="text-center">Loading alerts...</div>}
-            {error.lowStockAlerts && <div className="text-red-500 mb-4">{error.lowStockAlerts}</div>}
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <div className="hidden md:grid grid-cols-12 bg-gray-100 p-3 font-medium">
-                <div className="col-span-2">Plant ID</div>
-                <div className="col-span-3">Plant Name</div>
-                <div className="col-span-2">Stock Level</div>
-                <div className="col-span-2">Category</div>
-                <div className="col-span-3">Status</div>
+        <div className="mb-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold" style={{ color: theme.colors.primary }}>Apply Discount</h2>
+          </div>
+          <div className="bg-white rounded-lg shadow overflow-hidden p-6">
+            <form onSubmit={handleApplyDiscount}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>Discount Type</label>
+                {isLoadingDiscountTypes ? (
+                  <div className="text-gray-500">Loading discount types...</div>
+                ) : (
+                  <select
+                    name="discount_type"
+                    value={discountData.discount_type}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Select Discount Type</option>
+                    {discountTypes.map(type => (
+                      <option key={type.discount_type_id} value={type.name}>{type.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
-              {lowStockAlerts.alerts?.length > 0 ? (
-                lowStockAlerts.alerts.map(alert => (
-                  <div key={alert.plant_id} className="grid grid-cols-1 md:grid-cols-12 p-4 border-b gap-4 md:gap-0">
-                    <div className="md:hidden space-y-2">
-                      <div className="flex justify-between">
-                        <span className="font-medium">Plant ID:</span>
-                        <span>{alert.plant_id}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="font-medium">Plant Name:</span>
-                        <span>{alert.plant_name}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="font-medium">Stock Level:</span>
-                        <span>{alert.stock_level}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="font-medium">Category:</span>
-                        <span>{alert.category}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="font-medium">Status:</span>
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          alert.resolved ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {alert.resolved ? 'Resolved' : 'Unresolved'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="hidden md:grid col-span-2 items-center">{alert.plant_id}</div>
-                    <div className="hidden md:grid col-span-3 items-center">{alert.plant_name}</div>
-                    <div className="hidden md:grid col-span-2 items-center">{alert.stock_level}</div>
-                    <div className="hidden md:grid col-span-2 items-center">{alert.category}</div>
-                    <div className="hidden md:grid col-span-3 items-center">
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        alert.resolved ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                      }`}>
-                        {alert.resolved ? 'Resolved' : 'Unresolved'}
-                      </span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="p-4 text-center text-gray-500">
-                  No low stock alerts found
+              
+              {discountData.discount_type === 'Category' && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>Category</label>
+                  <select
+                    name="category_id"
+                    value={discountData.category_id}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Select Category</option>
+                    {categories.map(category => (
+                      <option key={category.category_id} value={category.category_id}>{category.name}</option>
+                    ))}
+                  </select>
                 </div>
               )}
-            </div>
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="bg-white p-4 rounded-lg shadow">
-                <h3 className="text-gray-500 text-sm">Total Alerts</h3>
-                <p className="text-2xl font-bold">{lowStockAlerts.total_alerts || 0}</p>
+              
+              {discountData.discount_type === 'Plant-specific' && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>Plant</label>
+                  <select
+                    name="plant_id"
+                    value={discountData.plant_id}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Select Plant</option>
+                    {plants.map(plant => (
+                      <option key={plant.plant_id} value={plant.plant_id}>{plant.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>Discount Value</label>
+                <div className="flex">
+                  <input
+                    type="number"
+                    name="discount_value"
+                    value={discountData.discount_value}
+                    onChange={handleInputChange}
+                    min="0"
+                    step="0.1"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    required
+                  />
+                  <div className="flex items-center bg-gray-100 border border-l-0 border-gray-300 rounded-r-lg px-3">
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        name="is_percentage"
+                        checked={discountData.is_percentage}
+                        onChange={handleInputChange}
+                        className="mr-2"
+                      />
+                      <span className="text-sm">%</span>
+                    </label>
+                  </div>
+                </div>
               </div>
-              <div className="bg-white p-4 rounded-lg shadow">
-                <h3 className="text-gray-500 text-sm">Unresolved Alerts</h3>
-                <p className="text-2xl font-bold">{lowStockAlerts.unresolved_alerts || 0}</p>
+              
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>Start Date</label>
+                <input
+                  type="datetime-local"
+                  name="start_date"
+                  value={discountData.start_date}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  required
+                />
               </div>
-              <div className="bg-white p-4 rounded-lg shadow">
-                <h3 className="text-gray-500 text-sm">Average Stock Level</h3>
-                <p className="text-2xl font-bold">{lowStockAlerts.avg_stock_level || 0}</p>
+              
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1" style={{ color: theme.colors.primary }}>End Date</label>
+                <input
+                  type="datetime-local"
+                  name="end_date"
+                  value={discountData.end_date}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  required
+                />
               </div>
-            </div>
+              
+              <div className="flex flex-col sm:flex-row justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowDiscountModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors order-2 sm:order-1"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isLoadingDiscountTypes}
+                  className={`px-4 py-2 rounded-lg transition-colors order-1 sm:order-2 ${
+                    isLoadingDiscountTypes 
+                      ? 'bg-gray-400 cursor-not-allowed' 
+                      : 'bg-[#224229] text-white hover:bg-[#4b6250]'
+                  }`}
+                >
+                  {isLoadingDiscountTypes ? 'Loading...' : 'Apply Discount'}
+                </button>
+              </div>
+            </form>
           </div>
-        </>
+        </div>
       )}
       
       {activeTab === 'view' && (

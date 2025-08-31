@@ -65,7 +65,6 @@ def delivery_agent_dashboard(request, agent_id):
                 JOIN order_statuses os ON o.status_id = os.status_id
                 WHERE oa.agent_id = %s
                 AND os.status_name = 'Delivered'
-                AND oa.completed_at IS NOT NULL
             """, [actual_agent_id])
             completed_assignments = cursor.fetchone()[0] or 0
 
@@ -82,15 +81,15 @@ def delivery_agent_dashboard(request, agent_id):
 
             # Average delivery time in hours
             cursor.execute("""
-                SELECT NVL(AVG(EXTRACT(DAY FROM (oa.completed_at - oa.assigned_at)) * 24 +
-                               EXTRACT(HOUR FROM (oa.completed_at - oa.assigned_at)) +
-                               EXTRACT(MINUTE FROM (oa.completed_at - oa.assigned_at)) / 60), 0) 
+                SELECT NVL(AVG(EXTRACT(DAY FROM (NVL(oa.completed_at, o.actual_delivery_date) - oa.assigned_at)) * 24 +
+                               EXTRACT(HOUR FROM (NVL(oa.completed_at, o.actual_delivery_date) - oa.assigned_at)) +
+                               EXTRACT(MINUTE FROM (NVL(oa.completed_at, o.actual_delivery_date) - oa.assigned_at)) / 60), 0) 
                 FROM order_assignments oa
                 JOIN orders o ON oa.order_id = o.order_id
                 JOIN order_statuses os ON o.status_id = os.status_id
                 WHERE oa.agent_id = %s
                 AND os.status_name = 'Delivered'
-                AND oa.completed_at IS NOT NULL
+                AND (oa.completed_at IS NOT NULL OR o.actual_delivery_date IS NOT NULL)
             """, [actual_agent_id])
             avg_delivery_time = cursor.fetchone()[0] or 0
 
@@ -166,7 +165,6 @@ def delivery_agent_dashboard(request, agent_id):
                 LEFT JOIN delivery_confirmations dc ON o.order_id = dc.order_id
                 WHERE oa.agent_id = %s
                 AND os.status_name = 'Delivered'
-                AND oa.completed_at IS NOT NULL
                 ORDER BY o.actual_delivery_date DESC
             """, [actual_agent_id])
             
@@ -429,64 +427,12 @@ def delivery_agent_completed_orders(request, agent_id):
             'error': f'Completed orders error: {str(e)}'
         }, status=500)
 
-@csrf_exempt
-@require_http_methods(["GET"])
-def delivery_agent_stats(request, agent_id):
-    """Get delivery agent statistics"""
-    try:
-        with connection.cursor() as cursor:
-            # Convert user_id to agent_id if needed
-            cursor.execute("""
-                SELECT da.agent_id 
-                FROM delivery_agents da 
-                WHERE da.user_id = %s OR da.agent_id = %s
-            """, [agent_id, agent_id])
-            
-            agent_record = cursor.fetchone()
-            if not agent_record:
-                return JsonResponse({
-                    'success': False,
-                    'error': 'Delivery agent not found'
-                }, status=404)
-            
-            actual_agent_id = agent_record[0]
-            
-            total_assignments = cursor.var(int)
-            pending_assignments = cursor.var(int)
-            completed_assignments = cursor.var(int)
-            total_earnings = cursor.var(float)
-            avg_delivery_time = cursor.var(float)
-            
-            cursor.callproc('get_delivery_agent_stats', [
-                actual_agent_id,
-                total_assignments,
-                pending_assignments,
-                completed_assignments,
-                total_earnings,
-                avg_delivery_time
-            ])
-            
-            return JsonResponse({
-                'success': True,
-                'data': {
-                    'total_assignments': total_assignments.getvalue() or 0,
-                    'pending_assignments': pending_assignments.getvalue() or 0,
-                    'completed_assignments': completed_assignments.getvalue() or 0,
-                    'total_earnings': float(total_earnings.getvalue() or 0),
-                    'avg_delivery_time': float(avg_delivery_time.getvalue() or 0)
-                }
-            })
-            
-    except Exception as e:
-        return JsonResponse({
-            'success': False,
-            'error': f'Stats error: {str(e)}'
-        }, status=500)
+
 
 @csrf_exempt
 @require_http_methods(["POST"])
 def update_delivery_status(request):
-    """Update delivery status for an order using stored procedure"""
+    """Update delivery status for an order using direct SQL queries"""
     try:
         data = json.loads(request.body)
         order_id = data.get('order_id')
@@ -500,6 +446,10 @@ def update_delivery_status(request):
                 'error': 'Missing required parameters: order_id, agent_id, status'
             }, status=400)
         
+        # Extract the actual value from the database result to avoid VariableWrapper error
+        if hasattr(agent_id, 'value'):
+            agent_id = agent_id.value
+            
         with connection.cursor() as cursor:
             # Convert user_id to agent_id if needed
             cursor.execute("""
@@ -520,25 +470,56 @@ def update_delivery_status(request):
             if hasattr(actual_agent_id, 'value'):
                 actual_agent_id = actual_agent_id.value
             
-            # Call the stored procedure
-            success_var = cursor.var(int)
-            message_var = cursor.var(str)
+            # Check if assignment exists and belongs to this agent
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM order_assignments oa
+                WHERE oa.order_id = %s AND oa.agent_id = %s
+            """, [order_id, actual_agent_id])
             
-            cursor.callproc('update_delivery_status', [
-                int(order_id),
-                actual_agent_id,
-                status,
-                notes,
-                success_var,
-                message_var
-            ])
+            assignment_exists = cursor.fetchone()[0]
+            if assignment_exists == 0:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Order not assigned to this delivery agent'
+                }, status=400)
             
-            success = success_var.getvalue()
-            message = message_var.getvalue()
+            # Get status ID
+            cursor.execute("""
+                SELECT status_id 
+                FROM order_statuses 
+                WHERE status_name = %s
+            """, [status])
+            
+            status_result = cursor.fetchone()
+            if not status_result:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Invalid status'
+                }, status=400)
+            
+            status_id = status_result[0]
+            
+            # Update order status
+            cursor.execute("""
+                UPDATE orders
+                SET status_id = %s
+                WHERE order_id = %s
+            """, [status_id, order_id])
+            
+            # Update assignment notes if provided
+            if notes:
+                cursor.execute("""
+                    UPDATE order_assignments
+                    SET notes = %s
+                    WHERE order_id = %s
+                """, [notes, order_id])
+            
+            connection.commit()
             
             return JsonResponse({
-                'success': bool(success),
-                'message': message
+                'success': True,
+                'message': f'Order status updated to {status}'
             })
             
     except json.JSONDecodeError:
@@ -547,6 +528,7 @@ def update_delivery_status(request):
             'error': 'Invalid JSON data'
         }, status=400)
     except Exception as e:
+        connection.rollback()
         import traceback
         error_traceback = traceback.format_exc()
         print(f"Update delivery status error: {error_traceback}")
@@ -558,7 +540,7 @@ def update_delivery_status(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def mark_delivery_completed(request):
-    """Mark delivery as completed using stored procedure"""
+    """Mark delivery as completed using direct SQL queries"""
     try:
         data = json.loads(request.body)
         order_id = data.get('order_id')
@@ -571,6 +553,10 @@ def mark_delivery_completed(request):
                 'error': 'Missing required parameters: order_id, agent_id'
             }, status=400)
         
+        # Extract the actual value from the database result to avoid VariableWrapper error
+        if hasattr(agent_id, 'value'):
+            agent_id = agent_id.value
+            
         with connection.cursor() as cursor:
             # Convert user_id to agent_id if needed
             cursor.execute("""
@@ -591,25 +577,132 @@ def mark_delivery_completed(request):
             if hasattr(actual_agent_id, 'value'):
                 actual_agent_id = actual_agent_id.value
             
-            # Call the stored procedure
-            success_var = cursor.var(int)
-            message_var = cursor.var(str)
+            # Check if agent has already confirmed
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM delivery_confirmations 
+                WHERE order_id = %s AND agent_confirmed = 1
+            """, [order_id])
             
-            cursor.callproc('mark_delivery_delivered', [
-                int(order_id),
-                actual_agent_id,
-                notes,
-                success_var,
-                message_var
-            ])
+            agent_already_confirmed = cursor.fetchone()[0]
+            if agent_already_confirmed > 0:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Agent has already confirmed this delivery'
+                }, status=400)
             
-            success = success_var.getvalue()
-            message = message_var.getvalue()
+            # Update assignment completion time
+            cursor.execute("""
+                UPDATE order_assignments
+                SET completed_at = SYSTIMESTAMP,
+                    notes = NVL(%s, notes)
+                WHERE order_id = %s
+            """, [notes, order_id])
             
-            return JsonResponse({
-                'success': bool(success),
-                'message': message
-            })
+            # Update order status to "Out for Delivery" if not already delivered
+            cursor.execute("""
+                UPDATE orders
+                SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Out for Delivery')
+                WHERE order_id = %s AND status_id != (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered')
+            """, [order_id])
+            
+            # Check if delivery confirmation record exists
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM delivery_confirmations 
+                WHERE order_id = %s
+            """, [order_id])
+            
+            confirmation_exists = cursor.fetchone()[0]
+            
+            # Get customer ID
+            cursor.execute("""
+                SELECT user_id 
+                FROM orders 
+                WHERE order_id = %s
+            """, [order_id])
+            
+            customer_id_result = cursor.fetchone()
+            if not customer_id_result:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Order not found'
+                }, status=404)
+            
+            customer_id = customer_id_result[0]
+            
+            # Check current confirmation status
+            cursor.execute("""
+                SELECT agent_confirmed, customer_confirmed 
+                FROM delivery_confirmations 
+                WHERE order_id = %s
+            """, [order_id])
+            
+            confirmation_result = cursor.fetchone()
+            
+            # Create delivery confirmation record if it doesn't exist
+            if confirmation_exists == 0:
+                cursor.execute("""
+                    INSERT INTO delivery_confirmations (
+                        order_id, 
+                        user_id, 
+                        agent_id, 
+                        agent_confirmed
+                    )
+                    VALUES (%s, %s, %s, 1)
+                """, [order_id, customer_id, actual_agent_id])
+                
+                # Check if customer already confirmed
+                cursor.execute("""
+                    SELECT customer_confirmed
+                    FROM delivery_confirmations
+                    WHERE order_id = %s
+                """, [order_id])
+                
+                customer_confirmed_result = cursor.fetchone()
+                if customer_confirmed_result and customer_confirmed_result[0] == 1:
+                    # If customer already confirmed, mark as delivered
+                    cursor.execute("""
+                        UPDATE orders
+                        SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
+                            actual_delivery_date = SYSTIMESTAMP
+                        WHERE order_id = %s
+                    """, [order_id])
+                else:
+                    return JsonResponse({
+                        'success': True,
+                        'message': 'Order marked as delivered. Waiting for customer confirmation.'
+                    })
+            else:
+                # Update existing confirmation
+                cursor.execute("""
+                    UPDATE delivery_confirmations
+                    SET agent_confirmed = 1,
+                        confirmed_date = CASE WHEN customer_confirmed = 1 THEN SYSTIMESTAMP ELSE confirmed_date END
+                    WHERE order_id = %s
+                """, [order_id])
+                
+                # Check if customer already confirmed
+                if confirmation_result and confirmation_result[1] == 1:
+                    # If customer already confirmed, mark as delivered
+                    cursor.execute("""
+                        UPDATE orders
+                        SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
+                            actual_delivery_date = SYSTIMESTAMP
+                        WHERE order_id = %s
+                    """, [order_id])
+                    
+                    return JsonResponse({
+                        'success': True,
+                        'message': 'Order delivered successfully'
+                    })
+                else:
+                    return JsonResponse({
+                        'success': True,
+                        'message': 'Order marked as delivered. Waiting for customer confirmation.'
+                    })
+            
+            connection.commit()
             
     except json.JSONDecodeError:
         return JsonResponse({
@@ -617,6 +710,7 @@ def mark_delivery_completed(request):
             'error': 'Invalid JSON data'
         }, status=400)
     except Exception as e:
+        connection.rollback()
         import traceback
         error_traceback = traceback.format_exc()
         print(f"Mark delivery completed error: {error_traceback}")
@@ -708,12 +802,12 @@ def get_agent_earnings(request, agent_id):
             if year:
                 try:
                     year_int = int(year)
-                    cursor.callproc('get_delivery_agent_monthly_earnings', [actual_agent_id, year_int, result_cursor])
+                    cursor.callproc('get_delivery_agent_monthly_earnings', [int(actual_agent_id), year_int, result_cursor])
                 except ValueError:
                     # If year is not a valid integer, use current year
-                    cursor.callproc('get_delivery_agent_monthly_earnings', [actual_agent_id, None, result_cursor])
+                    cursor.callproc('get_delivery_agent_monthly_earnings', [int(actual_agent_id), None, result_cursor])
             else:
-                cursor.callproc('get_delivery_agent_monthly_earnings', [actual_agent_id, None, result_cursor])
+                cursor.callproc('get_delivery_agent_monthly_earnings', [int(actual_agent_id), None, result_cursor])
             
             earnings_data = dictfetchall(result_cursor)
             result_cursor.close()
@@ -732,74 +826,220 @@ def get_agent_earnings(request, agent_id):
             'error': f'Earnings error: {str(e)}'
         }, status=500)
 
+# delivery_agent/views.py
 @csrf_exempt
-@require_http_methods(["POST"])
 def confirm_agent_delivery(request):
-    """Confirm delivery by agent using stored procedure"""
-    try:
-        data = json.loads(request.body)
-        order_id = data.get('order_id')
-        agent_id = data.get('agent_id')
-        notes = data.get('notes', '')
-        confirmation_type = data.get('type', 'delivered')  # Could be 'delivered' or other types
-        
-        if not order_id or not agent_id:
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            order_id = data.get('order_id')
+            agent_id = data.get('agent_id')
+            
+            # Extract the actual value from the database result to avoid VariableWrapper error
+            if hasattr(agent_id, 'value'):
+                agent_id = agent_id.value
+            
+            with connection.cursor() as cursor:
+                # Convert user_id to agent_id if needed
+                cursor.execute("""
+                    SELECT da.agent_id 
+                    FROM delivery_agents da 
+                    WHERE da.user_id = %s OR da.agent_id = %s
+                """, [agent_id, agent_id])
+                
+                agent_record = cursor.fetchone()
+                if not agent_record:
+                    return JsonResponse({
+                        'success': False, 
+                        'error': 'Delivery agent not found.'
+                    })
+                
+                actual_agent_id = agent_record[0]
+                # Extract the actual value from the database result to avoid VariableWrapper error
+                if hasattr(actual_agent_id, 'value'):
+                    actual_agent_id = actual_agent_id.value
+                
+                # Get customer ID (user_id) from the order
+                cursor.execute("""
+                    SELECT user_id FROM orders WHERE order_id = %s
+                """, [order_id])
+                
+                order_result = cursor.fetchone()
+                if not order_result:
+                    return JsonResponse({
+                        'success': False, 
+                        'error': 'Order not found.'
+                    })
+                
+                user_id = order_result[0]
+                
+                # Check if delivery confirmation record exists, create if not
+                cursor.execute("""
+                    SELECT COUNT(*) FROM delivery_confirmations WHERE order_id = %s
+                """, [order_id])
+                
+                confirmation_exists = cursor.fetchone()[0]
+                if confirmation_exists == 0:
+                    # Create delivery confirmation record
+                    cursor.execute("""
+                        INSERT INTO delivery_confirmations (order_id, user_id, agent_id, customer_confirmed, agent_confirmed)
+                        VALUES (%s, %s, %s, 0, 1)
+                    """, [order_id, user_id, actual_agent_id])
+                else:
+                    # Check if agent has already confirmed
+                    cursor.execute("""
+                        SELECT agent_confirmed FROM delivery_confirmations WHERE order_id = %s
+                    """, [order_id])
+                    
+                    agent_confirmed = cursor.fetchone()[0]
+                    if agent_confirmed == 1:
+                        return JsonResponse({
+                            'success': False, 
+                            'error': 'Agent has already confirmed this delivery.'
+                        })
+                    
+                    # Toggle agent confirmation
+                    cursor.execute("""
+                        UPDATE delivery_confirmations 
+                        SET agent_confirmed = 1
+                        WHERE order_id = %s
+                    """, [order_id])
+                
+                # Check if both parties have confirmed
+                cursor.execute("""
+                    SELECT agent_confirmed, customer_confirmed FROM delivery_confirmations WHERE order_id = %s
+                """, [order_id])
+                
+                agent_confirmed, customer_confirmed = cursor.fetchone()
+                
+                # If both confirmed, the trigger will automatically update the order status to Delivered
+                # We just need to commit and return the appropriate message
+                connection.commit()
+                
+                if agent_confirmed == 1 and customer_confirmed == 1:
+                    return JsonResponse({
+                        'success': True,
+                        'message': 'Delivery completed! Order status updated to Delivered.'
+                    })
+                elif customer_confirmed == 1:
+                    return JsonResponse({
+                        'success': True,
+                        'message': 'Agent confirmation recorded. Waiting for customer confirmation.'
+                    })
+                else:
+                    return JsonResponse({
+                        'success': True,
+                        'message': 'Agent confirmation recorded.'
+                    })
+                
+        except Exception as e:
+            connection.rollback()
             return JsonResponse({
                 'success': False,
-                'error': 'Missing required parameters: order_id, agent_id'
-            }, status=400)
-        
-        with connection.cursor() as cursor:
-            # Convert user_id to agent_id if needed
-            cursor.execute("""
-                SELECT da.agent_id 
-                FROM delivery_agents da 
-                WHERE da.user_id = %s OR da.agent_id = %s
-            """, [agent_id, agent_id])
+                'error': str(e)
+            }, status=500)
+
+# order/views.py
+@csrf_exempt
+def confirm_customer_delivery(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            order_id = data.get('order_id')
+            user_id = data.get('user_id')
             
-            agent_record = cursor.fetchone()
-            if not agent_record:
-                return JsonResponse({
-                    'success': False,
-                    'error': 'Delivery agent not found'
-                }, status=404)
-            
-            actual_agent_id = agent_record[0]
             # Extract the actual value from the database result to avoid VariableWrapper error
-            if hasattr(actual_agent_id, 'value'):
-                actual_agent_id = actual_agent_id.value
+            if hasattr(user_id, 'value'):
+                user_id = user_id.value
             
-            # For delivery confirmation, we use the update_delivery_status procedure with 'DELIVERED' status
-            success_var = cursor.var(int)
-            message_var = cursor.var(str)
-            
-            cursor.callproc('update_delivery_status', [
-                int(order_id),
-                actual_agent_id,
-                'DELIVERED',
-                notes,
-                success_var,
-                message_var
-            ])
-            
-            success = success_var.getvalue()
-            message = message_var.getvalue()
-            
+            with connection.cursor() as cursor:
+                # Verify order belongs to user
+                cursor.execute("""
+                    SELECT COUNT(*) FROM orders WHERE order_id = %s AND user_id = %s
+                """, [order_id, user_id])
+                
+                order_count = cursor.fetchone()[0]
+                if order_count == 0:
+                    return JsonResponse({'success': False, 'error': 'Order not found or not authorized'})
+                
+                # Check if delivery confirmation record exists, create if not
+                cursor.execute("""
+                    SELECT COUNT(*) FROM delivery_confirmations WHERE order_id = %s
+                """, [order_id])
+                
+                confirmation_exists = cursor.fetchone()[0]
+                if confirmation_exists == 0:
+                    # Get agent_id from order_assignments
+                    cursor.execute("""
+                        SELECT agent_id FROM order_assignments WHERE order_id = %s
+                    """, [order_id])
+                    
+                    agent_result = cursor.fetchone()
+                    if agent_result:
+                        agent_id = agent_result[0]
+                        # Extract the actual value from the database result to avoid VariableWrapper error
+                        if hasattr(agent_id, 'value'):
+                            agent_id = agent_id.value
+                    else:
+                        # If no agent is assigned, we can't create a delivery confirmation record yet
+                        # Return an error message indicating that an agent needs to be assigned first
+                        return JsonResponse({
+                            'success': False, 
+                            'error': 'No delivery agent assigned to this order yet. Please wait for an agent to be assigned before confirming delivery.'
+                        })
+                    
+                    # Create delivery confirmation record
+                    cursor.execute("""
+                        INSERT INTO delivery_confirmations (order_id, user_id, agent_id, customer_confirmed, agent_confirmed)
+                        VALUES (%s, %s, %s, 1, 0)
+                    """, [order_id, user_id, agent_id])
+                else:
+                    # Toggle customer confirmation
+                    cursor.execute("""
+                        UPDATE delivery_confirmations 
+                        SET customer_confirmed = 1
+                        WHERE order_id = %s
+                    """, [order_id])
+                
+                # Check if both parties have confirmed
+                cursor.execute("""
+                    SELECT agent_confirmed, customer_confirmed FROM delivery_confirmations WHERE order_id = %s
+                """, [order_id])
+                
+                agent_confirmed, customer_confirmed = cursor.fetchone()
+                
+                # If both confirmed, update order status to Delivered
+                if agent_confirmed == 1 and customer_confirmed == 1:
+                    cursor.execute("""
+                        UPDATE orders
+                        SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
+                            actual_delivery_date = SYSTIMESTAMP
+                        WHERE order_id = %s
+                    """, [order_id])
+                    
+                    connection.commit()
+                    return JsonResponse({
+                        'success': True,
+                        'message': 'Delivery completed! Order status updated to Delivered.'
+                    })
+                else:
+                    connection.commit()
+                    if agent_confirmed == 1:
+                        return JsonResponse({
+                            'success': True,
+                            'message': 'Customer confirmation recorded. Waiting for agent confirmation.'
+                        })
+                    else:
+                        return JsonResponse({
+                            'success': True,
+                            'message': 'Customer confirmation recorded.'
+                        })
+                
+        except Exception as e:
+            connection.rollback()
             return JsonResponse({
-                'success': bool(success),
-                'message': message
-            })
-            
-    except json.JSONDecodeError:
-        return JsonResponse({
-            'success': False,
-            'error': 'Invalid JSON data'
-        }, status=400)
-    except Exception as e:
-        import traceback
-        error_traceback = traceback.format_exc()
-        print(f"Confirm delivery error: {error_traceback}")
-        return JsonResponse({
-            'success': False,
-            'error': f'Delivery confirmation error: {str(e)}'
-        }, status=500)
+                'success': False,
+                'error': str(e)
+            }, status=500)
+
+

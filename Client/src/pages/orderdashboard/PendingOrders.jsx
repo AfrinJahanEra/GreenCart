@@ -21,7 +21,7 @@ const PendingOrders = () => {
     try {
       const result = await confirmDelivery(orderId);
       if (result.success) {
-        alert('Delivery confirmed successfully!');
+        alert(result.message);
         // Refresh the orders after confirmation
         await fetchPendingConfirmationOrders();
       } else {

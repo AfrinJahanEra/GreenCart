@@ -12,6 +12,14 @@ def plants_by_category(request, slug):
             columns = [col[0].lower() for col in out_cursor.description]
             rows = [dict(zip(columns, row)) for row in out_cursor.fetchall()]
             out_cursor.close()
+        
+        # Ensure image fields are properly named
+        for plant in rows:
+            if 'primary_image' in plant and 'image' not in plant:
+                plant['image'] = plant['primary_image']
+            if 'image_url' not in plant and 'image' in plant:
+                plant['image_url'] = plant['image']
+                
         return JsonResponse({"plants": rows})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
@@ -26,6 +34,14 @@ def search_plants(request):
             columns = [col[0].lower() for col in out_cursor.description]
             rows = [dict(zip(columns, row)) for row in out_cursor.fetchall()]
             out_cursor.close()
+        
+        # Ensure image fields are properly named
+        for plant in rows:
+            if 'primary_image' in plant and 'image' not in plant:
+                plant['image'] = plant['primary_image']
+            if 'image_url' not in plant and 'image' in plant:
+                plant['image_url'] = plant['image']
+                
         return JsonResponse({"plants": rows})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)

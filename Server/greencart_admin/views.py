@@ -2,6 +2,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db import connection, DatabaseError
 from datetime import datetime
+import json
 
 # Get all orders for a user (optionally filter by status)
 def get_user_orders_view(request, user_id):
@@ -132,6 +133,28 @@ def assign_delivery_agent_view(request):
 
         with connection.cursor() as cursor:
             cursor.callproc("assign_delivery_agent", [order_id, agent_id])
+            
+        return JsonResponse({"success": True, "message": "Delivery agent assigned successfully"})
+    except DatabaseError as e:
+        return JsonResponse({"error": str(e)}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+def assign_delivery_agent(request):
+    try:
+        data = json.loads(request.body)
+        order_id = data.get("order_id")
+        agent_id = data.get("agent_id")
+
+        if not order_id:
+            return JsonResponse({"error": "order_id is required"}, status=400)
+
+        with connection.cursor() as cursor:
+            # Extract the actual value from the database result to avoid VariableWrapper error
+            if hasattr(agent_id, 'value'):
+                agent_id = agent_id.value
+            
+            cursor.callproc("assign_delivery_agent", [int(order_id), int(agent_id) if agent_id else None])
             
         return JsonResponse({"success": True, "message": "Delivery agent assigned successfully"})
     except DatabaseError as e:

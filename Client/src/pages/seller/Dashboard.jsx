@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { theme } from '../../theme.js';
 
 const Dashboard = () => {
-  const { dashboardData, loading, totalEarnings } = useOutletContext();
+  const { dashboardData, loading } = useOutletContext();
   
   // Helper function to safely format numbers
   const formatPrice = (price) => {
@@ -13,7 +13,7 @@ const Dashboard = () => {
   
   // Helper function to safely format total earnings
   const formatTotalEarnings = () => {
-    const earnings = parseFloat(totalEarnings);
+    const earnings = parseFloat(dashboardData.stats?.total_earnings || 0);
     return isNaN(earnings) ? '0.00' : earnings.toFixed(2);
   };
   

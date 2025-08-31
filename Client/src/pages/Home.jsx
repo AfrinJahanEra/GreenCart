@@ -8,42 +8,47 @@ import { Link } from 'react-router-dom';
 import { useTopCategories, useTopPlants, useTopSellers } from '../hooks/useHomeData';
 import LoadingSpinner from '../components/LoadingSpinner';
 
-// Default images (fallback if API doesn't provide images)
-import lowLightImg from '../assets/ardella.jpeg';
-import petFriendlyImg from '../assets/margent.jpeg';
-import airPurifyingImg from '../assets/snake.jpeg';
-import beginnerFriendlyImg from '../assets/Blosom.jpeg';
-
-const defaultImages = {
-  'low-light': lowLightImg,
-  'pet-friendly': petFriendlyImg,
-  'air-purifying': airPurifyingImg,
-  'beginner-friendly': beginnerFriendlyImg
-};
-
 const Home = () => {
   const { categories: apiCategories, loading: categoriesLoading, error: categoriesError } = useTopCategories();
   const { plants: apiPlants, loading: plantsLoading, error: plantsError } = useTopPlants();
   const { sellers: apiSellers, loading: sellersLoading, error: sellersError } = useTopSellers();
 
-  // Transform API categories data to match frontend structure
-  const categories = apiCategories.map(category => ({
+  // Use 4 dummy URLs for category images as requested
+  const dummyCategoryImages = [
+    'https://plus.unsplash.com/premium_photo-1681807326608-ff8af57d796a?q=80&w=725&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
+    'https://images.unsplash.com/photo-1589420847301-caf51d62a5d1?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDEwfHx8ZW58MHx8fHx8',
+    'https://images.unsplash.com/photo-1721908374704-d84eb561c4db?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDI3fHx8ZW58MHx8fHx8',
+    'https://plus.unsplash.com/premium_photo-1681807326535-621ae5ef9da3?w=600&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDQ4fHx8ZW58MHx8fHx8'
+  ];
+
+  // Transform API categories data to match frontend structure with dummy images
+  const categories = apiCategories.map((category, index) => ({
     id: category.category_id,
     name: category.name,
     description: `${category.plant_count} plants available`,
-    image: defaultImages[category.slug] || lowLightImg, // Fallback image
+    image: dummyCategoryImages[index % dummyCategoryImages.length], // Use dummy images in rotation
     slug: category.slug
   }));
 
-  // Transform API plants data to match frontend structure
-  const popularPlants = apiPlants.map(plant => ({
-    id: plant.plant_id,
-    name: plant.name,
-    price: plant.price,
-    ratingStars: '★★★★★', // You might need to calculate this from ratings data
-    reviewCount: plant.review_count || 0,
-    image: plant.image_url || airPurifyingImg // Fallback image
-  }));
+  // Transform API plants data to match frontend structure with actual ratings
+  const popularPlants = apiPlants.map(plant => {
+    // Calculate star rating based on average rating
+    const avgRating = plant.avg_rating || 0;
+    const fullStars = Math.floor(avgRating);
+    const hasHalfStar = avgRating % 1 >= 0.5;
+    const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
+    
+    const ratingStars = '★'.repeat(fullStars) + (hasHalfStar ? '½' : '') + '☆'.repeat(emptyStars);
+    
+    return {
+      id: plant.plant_id,
+      name: plant.name,
+      price: plant.base_price || plant.price,
+      ratingStars: ratingStars,
+      reviewCount: plant.review_count || 0,
+      image: plant.primary_image || plant.image_url || plant.image || 'https://via.placeholder.com/300x300.png?text=Plant+Image'
+    };
+  });
 
   // Transform API sellers data to testimonials
   const testimonials = apiSellers.map(seller => ({

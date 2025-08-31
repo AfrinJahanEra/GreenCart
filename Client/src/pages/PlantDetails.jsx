@@ -173,7 +173,12 @@ const PlantDetails = () => {
   }
 
   const sizes = formatSizes();
-  const allImages = plant?.image_urls ? [plant.primary_image, ...plant.image_urls] : [plant?.primary_image].filter(Boolean);
+  // Parse image URLs if they're provided as a comma-separated string
+  const imageUrls = plant?.image_urls ? 
+    (typeof plant.image_urls === 'string' ? plant.image_urls.split(',') : plant.image_urls) : 
+    [];
+  // Limit to 2 images as requested
+  const allImages = [plant?.primary_image, ...imageUrls].filter(Boolean).slice(0, 2);
   
   // Calculate discounted price if applicable
   const calculateDiscountedPrice = (basePrice) => {

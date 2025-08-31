@@ -123,7 +123,6 @@ const Orders = () => {
           <div className="col-span-1">Amount</div>
           <div className="col-span-2">Status</div>
           <div className="col-span-2">Delivery Agent</div>
-          <div className="col-span-2">Actions</div>
         </div>
         {filteredOrders.length > 0 ? (
           filteredOrders.map(order => (
@@ -207,7 +206,7 @@ const Orders = () => {
                   {order.order_status}
                 </span>
               </div>
-              <div className="hidden md:grid col-span-2 items-center">{order.agent_name || 'Unassigned'}</div>
+              {/* <div className="hidden md:grid col-span-2 items-center">{order.agent_name || 'Unassigned'}</div> */}
               <div className="hidden md:grid col-span-2 items-center flex gap-2">
                 <button
                   onClick={() => handleOpenAssignModal(order.order_id, order.agent_id)}
