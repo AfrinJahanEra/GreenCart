@@ -57,7 +57,7 @@ $${\color{#76C893}Bridging \space \color{#4DB6AC}Nature \space \color{#81C784}an
 <li>Smart filtering (plant type, needs, toxicity alerts)</li>
 </ul>
 
-<h3>$\large\textbf{\color{#FFD93D}{Ratings & Reviews}}$</h3>
+<h3>$\large\textbf{\color{#FFD93D}{Ratings and Reviews}}$</h3>
 <ul>
 <li>Customer reviews, ratings, and feedback</li>
 <li>Community interaction through comments</li>
@@ -69,7 +69,7 @@ $${\color{#76C893}Bridging \space \color{#4DB6AC}Nature \space \color{#81C784}an
 <li>Optimized route assignment</li>
 </ul>
 
-<h3>$\large\textbf{\color{#FF6B6B}{Admin Dashboard & Analytics}}$</h3>
+<h3>$\large\textbf{\color{#FF6B6B}{Admin Dashboard and Analytics}}$</h3>
 <ul>
 <li>Sales reports by staff, plant, or timeframe</li>
 <li>Salary and performance management</li>
@@ -124,63 +124,45 @@ Clone the repository:
 ```console
 git clone https://github.com/your-username/GreenCart.git
 cd GreenCart
+```
+
 <h2>$\large\textnormal{\color{#4CAF50}{Backend Setup (Django)}}$</h2>
-console
-Copy code
+
+```console
 cd backend
 python -m venv env
 source env/bin/activate    # (Linux/Mac)
 .\env\Scripts\activate     # (Windows)
 pip install -r requirements.txt
 python manage.py runserver
+```
+
 <h2>$\large\textnormal{\color{#4CAF50}{Frontend Setup (React)}}$</h2>
-console
-Copy code
+
+```console
 cd frontend
 npm install
 npm start
-[!IMPORTANT]
-Configure .env file with your Oracle DB credentials before running.
+```
 
-<h1>$\large\textnormal{\color{#4CAF50}{Team Members}}$</h1> <div align="center">
-$\large\text{\color{#DAA5A4}{Name}}$	$\large\text{\color{#D6C8FF}{Github}}$	$\large\text{\color{#C8A2C8}{Contribution}}$
-Ramisa Anan Rahman	github	Frontend
-Ridika Naznin	github	Backend
-Afrin Jahan Era	github	Full Stack
+> [!IMPORTANT]
+> Configure .env file with your Oracle DB credentials before running.
+
+<h1>$\large\textnormal{\color{#2196F3}{Team Members}}$</h1>
+
+<div align="center">
+  
+| $\large\text{\color{#DAA5A4}{Name}}$ | $\large\text{\color{#D6C8FF}{Github Profile}}$ | $\large\text{\color{#C8A2C8}{Contribution}}$ |
+|--------------------------------------|------------------------------------------------|----------------------------------------------|
+| Afrin Jahan Era | [github](https://github.com/AfrinJahanEra) | Full Stack |
+| Ramisa Anan Rahman | [github](https://github.com/Ramisa105) | Frontend |
+| Ridika Naznin | [github](https://github.com/ridika-2004) | Backend |
 
 </div>
-<h1>$\large\textnormal{\color{#4CAF50}{License}}$</h1>
-<img src="https://github.com/user-attachments/assets/da1a44dc-a69d-4b37-8330-30214c6e768f" align = "right" width = "60px">
-𝑇
-ℎ
-𝑖
-𝑠
- 
-𝑝
-𝑟
-𝑜
-𝑗
-𝑒
-𝑐
-𝑡
- 
-𝑖
-𝑠
- 
-𝑙
-𝑖
-𝑐
-𝑒
-𝑛
-𝑠
-𝑒
-𝑑
- 
-𝑢
-𝑛
-𝑑
-𝑒
-𝑟
-This project is licensed under MIT License
 
-<a href="#top">Back to top</a>
+<h1>$\large\textnormal{\color{#2196F3}{License}}$</h1>
+
+> <img src="https://github.com/user-attachments/assets/da1a44dc-a69d-4b37-8330-30214c6e768f" align = "right" width = "60px">
+
+
+> $${\color{lightblue}This \space \color{#5EEAD4}project \space \color{#FBF3D4}is \space \color{#D4D4FF}under}$$ [MIT License](https://github.com/AfrinJahanEra/TechSage?tab=MIT-1-ov-file)
