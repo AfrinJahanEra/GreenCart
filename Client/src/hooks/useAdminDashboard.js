@@ -230,6 +230,70 @@ export const useAdminDashboard = () => {
     }
   };
 
+  // Fetch discount types
+  const fetchDiscountTypes = async () => {
+    try {
+      const response = await adminAPI.getDiscountTypes();
+      
+      if (response.data.status === 'success') {
+        return { success: true, data: response.data.data };
+      } else {
+        throw new Error(response.data.message || 'Failed to fetch discount types');
+      }
+    } catch (err) {
+      const errorMessage = handleApiError(err);
+      return { success: false, error: errorMessage, data: [] };
+    }
+  };
+
+  // Fetch all plants
+  const fetchAllPlants = async () => {
+    try {
+      const response = await adminAPI.getAllPlants();
+      
+      if (response.data.status === 'success') {
+        return { success: true, data: response.data.data };
+      } else {
+        throw new Error(response.data.message || 'Failed to fetch plants');
+      }
+    } catch (err) {
+      const errorMessage = handleApiError(err);
+      return { success: false, error: errorMessage, data: [] };
+    }
+  };
+
+  // Fetch all categories
+  const fetchAllCategories = async () => {
+    try {
+      const response = await adminAPI.getAllCategories();
+      
+      if (response.data.status === 'success') {
+        return { success: true, data: response.data.data };
+      } else {
+        throw new Error(response.data.message || 'Failed to fetch categories');
+      }
+    } catch (err) {
+      const errorMessage = handleApiError(err);
+      return { success: false, error: errorMessage, data: [] };
+    }
+  };
+
+  // Fetch all discounts
+  const fetchAllDiscounts = async () => {
+    try {
+      const response = await adminAPI.getAllDiscounts();
+      
+      if (response.data.status === 'success') {
+        return { success: true, data: response.data.data };
+      } else {
+        throw new Error(response.data.message || 'Failed to fetch discounts');
+      }
+    } catch (err) {
+      const errorMessage = handleApiError(err);
+      return { success: false, error: errorMessage, data: [] };
+    }
+  };
+
   // Delete customer
   const deleteCustomer = async (customerId, requestorId) => {
     try {
@@ -286,6 +350,10 @@ export const useAdminDashboard = () => {
     assignDeliveryAgent,
     getAvailableDeliveryAgents,
     applyDiscount,
+    fetchDiscountTypes,
+    fetchAllPlants,
+    fetchAllCategories,
+    fetchAllDiscounts,
     deleteCustomer,
     refreshAllData
   };

@@ -704,8 +704,14 @@ def get_agent_earnings(request, agent_id):
             
             result_cursor = cursor.connection.cursor()
             
+            # Handle year parameter properly
             if year:
-                cursor.callproc('get_delivery_agent_monthly_earnings', [actual_agent_id, int(year), result_cursor])
+                try:
+                    year_int = int(year)
+                    cursor.callproc('get_delivery_agent_monthly_earnings', [actual_agent_id, year_int, result_cursor])
+                except ValueError:
+                    # If year is not a valid integer, use current year
+                    cursor.callproc('get_delivery_agent_monthly_earnings', [actual_agent_id, None, result_cursor])
             else:
                 cursor.callproc('get_delivery_agent_monthly_earnings', [actual_agent_id, None, result_cursor])
             
@@ -718,6 +724,9 @@ def get_agent_earnings(request, agent_id):
             })
             
     except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"Agent earnings error: {error_traceback}")
         return JsonResponse({
             'success': False,
             'error': f'Earnings error: {str(e)}'

@@ -6,10 +6,7 @@ import { theme } from '../../theme';
 
 const Earnings = () => {
   const { user } = useAuth();
-  const { dashboardData, fetchMonthlyEarnings, loading, error } = useDeliveryAgent(user?.user_id);
-  const [monthlyEarnings, setMonthlyEarnings] = useState([]);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [isLoadingEarnings, setIsLoadingEarnings] = useState(false);
+  const { dashboardData, loading, error } = useDeliveryAgent(user?.user_id);
   
   // Helper function to safely format price
   const formatPrice = (value) => {
@@ -30,49 +27,6 @@ const Earnings = () => {
   const completedDeliveries = dashboardData?.completed_assignments || [];
   const stats = dashboardData?.stats || {};
   const totalEarnings = stats?.total_earnings || 0;
-  
-  // Fetch monthly earnings data
-  useEffect(() => {
-    const loadMonthlyEarnings = async () => {
-      if (user?.user_id && fetchMonthlyEarnings) {
-        setIsLoadingEarnings(true);
-        try {
-          const earnings = await fetchMonthlyEarnings(selectedYear);
-          console.log('Monthly earnings data:', earnings);
-          setMonthlyEarnings(earnings || []);
-        } catch (err) {
-          console.error('Error loading monthly earnings:', err);
-        } finally {
-          setIsLoadingEarnings(false);
-        }
-      }
-    };
-
-    loadMonthlyEarnings();
-  }, [user?.user_id, selectedYear, fetchMonthlyEarnings]);
-  
-  // Calculate monthly totals
-  const monthlyTotals = monthlyEarnings.reduce((acc, earning) => {
-    const month = earning.month || 'Unknown';
-    if (!acc[month]) {
-      acc[month] = {
-        month,
-        totalEarnings: 0,
-        deliveryCount: 0,
-        orders: []
-      };
-    }
-    acc[month].totalEarnings += parseFloat(earning.delivery_fee || 0);
-    acc[month].deliveryCount += 1;
-    acc[month].orders.push(earning);
-    return acc;
-  }, {});
-  
-  const monthlyData = Object.values(monthlyTotals).sort((a, b) => {
-    const months = ['January', 'February', 'March', 'April', 'May', 'June',
-                   'July', 'August', 'September', 'October', 'November', 'December'];
-    return months.indexOf(a.month) - months.indexOf(b.month);
-  });
 
   if (loading.dashboard) {
     return (
@@ -88,29 +42,6 @@ const Earnings = () => {
         <h1 className="text-2xl font-bold" style={{ color: theme.colors.primary }}>
           My Earnings
         </h1>
-        <div className="flex items-center gap-4">
-          <select
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#224229] focus:border-transparent"
-          >
-            {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(year => (
-              <option key={year} value={year}>{year}</option>
-            ))}
-          </select>
-          <button
-            onClick={async () => {
-              setIsLoadingEarnings(true);
-              const earnings = await fetchMonthlyEarnings(selectedYear);
-              setMonthlyEarnings(earnings || []);
-              setIsLoadingEarnings(false);
-            }}
-            className="bg-[#224229] text-white px-4 py-2 rounded-lg hover:bg-[#4b6250] transition-colors text-sm"
-            disabled={isLoadingEarnings}
-          >
-            {isLoadingEarnings ? 'Loading...' : 'Refresh'}
-          </button>
-        </div>
       </div>
       
       {error.dashboard && (
@@ -122,24 +53,24 @@ const Earnings = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="bg-white p-4 rounded-lg shadow">
           <h3 className="text-gray-500 text-sm">Total Deliveries</h3>
-          <p className="text-2xl font-bold">{stats.total_deliveries || 0}</p>
+          <p className="text-2xl font-bold">{stats.total_deliveries || stats.total_assignments || 0}</p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow">
           <h3 className="text-gray-500 text-sm">Completed Deliveries</h3>
-          <p className="text-2xl font-bold">{stats.completed_deliveries || 0}</p>
+          <p className="text-2xl font-bold">{stats.completed_deliveries || stats.completed_assignments || 0}</p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow">
           <h3 className="text-gray-500 text-sm">Pending Deliveries</h3>
-          <p className="text-2xl font-bold">{stats.pending_deliveries || 0}</p>
+          <p className="text-2xl font-bold">{stats.pending_deliveries || stats.pending_assignments || 0}</p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow">
           <h3 className="text-gray-500 text-sm">Total Earnings</h3>
-          <p className="text-2xl font-bold">${totalEarnings.toFixed(2)}</p>
+          <p className="text-2xl font-bold">${formatPrice(totalEarnings)}</p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow">
           <h3 className="text-gray-500 text-sm">Avg. per Delivery</h3>
           <p className="text-2xl font-bold">
-            ${stats.avg_earnings_per_delivery ? stats.avg_earnings_per_delivery.toFixed(2) : '0.00'}
+            ${stats.avg_earnings_per_delivery ? formatPrice(stats.avg_earnings_per_delivery) : '0.00'}
           </p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow">
@@ -148,60 +79,6 @@ const Earnings = () => {
             {stats.completion_rate ? `${stats.completion_rate}%` : '0%'}
           </p>
         </div>
-      </div>
-      
-      {/* Monthly Earnings Breakdown */}
-      <div className="bg-white rounded-lg shadow overflow-hidden mb-8">
-        <h2 className="p-4 border-b font-medium" style={{ color: theme.colors.primary }}>
-          Monthly Earnings Breakdown ({selectedYear})
-        </h2>
-        
-        {isLoadingEarnings ? (
-          <div className="flex justify-center items-center p-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#224229]"></div>
-          </div>
-        ) : monthlyData.length > 0 ? (
-          <div className="divide-y">
-            {monthlyData.map((monthData, index) => (
-              <div key={index} className="p-4">
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="font-medium text-lg">{monthData.month}</h3>
-                  <div className="text-right">
-                    <p className="text-lg font-bold text-green-600">
-                      ${monthData.totalEarnings.toFixed(2)}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      {monthData.deliveryCount} deliveries
-                    </p>
-                  </div>
-                </div>
-                
-                {/* Monthly delivery details */}
-                <div className="mt-3 space-y-2">
-                  {monthData.orders.slice(0, 5).map((order, orderIndex) => (
-                    <div key={orderIndex} className="flex justify-between items-center bg-gray-50 p-2 rounded text-sm">
-                      <span>Order #{order.order_number}</span>
-                      <span className="font-medium">${formatPrice(order.delivery_fee)}</span>
-                    </div>
-                  ))}
-                  {monthData.orders.length > 5 && (
-                    <p className="text-xs text-gray-500 text-center">
-                      +{monthData.orders.length - 5} more deliveries
-                    </p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="p-8 text-center text-gray-500">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-            </svg>
-            <p className="text-lg">No earnings data for {selectedYear}</p>
-            <p className="text-sm">Start making deliveries to see your earnings here</p>
-          </div>
-        )}
       </div>
       
       {/* Recent Delivery History */}

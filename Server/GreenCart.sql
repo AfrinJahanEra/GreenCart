@@ -1660,7 +1660,7 @@ END;
 /
 
 -- 4. Procedure for customer to confirm delivery
-CREATE OR REPLACE PROCEDURE customer_confirm_delivery (
+CREATE OR REPLACE PROCEDURE confirm_customer_delivery (
     p_order_id IN NUMBER,
     p_user_id IN NUMBER,
     p_success OUT NUMBER,
@@ -1748,7 +1748,7 @@ EXCEPTION
         ROLLBACK;
         p_success := 0;
         p_message := 'Error confirming delivery: ' || SQLERRM;
-END;
+END confirm_customer_delivery;
 /
 
 drop procedure add_review;
@@ -3403,6 +3403,7 @@ CREATE OR REPLACE PROCEDURE update_delivery_status(
 ) AS
     v_current_status VARCHAR2(50);
     v_valid_agent NUMBER;
+    v_customer_id NUMBER;
 BEGIN
     -- Check if agent is assigned to this order
     SELECT COUNT(*) INTO v_valid_agent
@@ -3415,8 +3416,9 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Get current status
-    SELECT os.status_name INTO v_current_status
+    -- Get current status and customer ID
+    SELECT os.status_name, o.user_id 
+    INTO v_current_status, v_customer_id
     FROM orders o
     JOIN order_statuses os ON o.status_id = os.status_id
     WHERE o.order_id = p_order_id;
@@ -3451,18 +3453,17 @@ BEGIN
             actual_delivery_date = SYSTIMESTAMP
         WHERE order_id = p_order_id;
 
-        -- Create delivery confirmation record
+        -- Fixed MERGE statement syntax
         MERGE INTO delivery_confirmations dc
-        USING (SELECT p_order_id AS order_id FROM dual) src
+        USING (SELECT p_order_id AS order_id, v_customer_id AS user_id, p_agent_id AS agent_id FROM dual) src
         ON (dc.order_id = src.order_id)
         WHEN MATCHED THEN
-            UPDATE SET agent_confirmed = 1,
-                      confirmed_date = CASE WHEN customer_confirmed = 1 THEN SYSTIMESTAMP ELSE confirmed_date END
+            UPDATE SET 
+                agent_confirmed = 1,
+                confirmed_date = CASE WHEN customer_confirmed = 1 THEN SYSTIMESTAMP ELSE confirmed_date END
         WHEN NOT MATCHED THEN
             INSERT (order_id, user_id, agent_id, agent_confirmed)
-            SELECT p_order_id, o.user_id, p_agent_id, 1
-            FROM orders o
-            WHERE o.order_id = p_order_id;
+            VALUES (src.order_id, src.user_id, src.agent_id, 1);
         
         p_success := 1;
         p_message := 'Order delivered successfully';
@@ -3482,6 +3483,94 @@ END;
 /
 
 
+-- Procedure for delivery agent to confirm delivery
+CREATE OR REPLACE PROCEDURE confirm_agent_delivery (
+    p_order_id IN NUMBER,
+    p_agent_id IN NUMBER,
+    p_notes IN VARCHAR2 DEFAULT NULL,
+    p_success OUT NUMBER,
+    p_message OUT VARCHAR2
+) AS
+    v_assignment_exists NUMBER;
+    v_current_status VARCHAR2(50);
+    v_customer_id NUMBER;
+BEGIN
+    -- Check if assignment exists and belongs to this agent
+    SELECT COUNT(*)
+    INTO v_assignment_exists
+    FROM order_assignments oa
+    JOIN orders o ON oa.order_id = o.order_id
+    JOIN order_statuses os ON o.status_id = os.status_id
+    WHERE oa.order_id = p_order_id 
+    AND oa.agent_id = p_agent_id
+    AND os.status_name = 'Out for Delivery';
+
+    IF v_assignment_exists = 0 THEN
+        p_success := 0;
+        p_message := 'Order not assigned to this delivery agent or not in Out for Delivery status';
+        RETURN;
+    END IF;
+
+    -- Get customer ID
+    SELECT o.user_id
+    INTO v_customer_id
+    FROM orders o
+    WHERE o.order_id = p_order_id;
+
+    -- Update assignment completion time
+    UPDATE order_assignments
+    SET completed_at = SYSTIMESTAMP,
+        notes = NVL(p_notes, notes)
+    WHERE order_id = p_order_id;
+
+    -- Create or update delivery confirmation record with agent confirmation
+    MERGE INTO delivery_confirmations dc
+    USING (SELECT p_order_id AS order_id, v_customer_id AS user_id, p_agent_id AS agent_id FROM dual) src
+    ON (dc.order_id = src.order_id)
+    WHEN MATCHED THEN
+        UPDATE SET 
+            agent_confirmed = 1,
+            confirmed_date = CASE WHEN customer_confirmed = 1 THEN SYSTIMESTAMP ELSE confirmed_date END
+    WHEN NOT MATCHED THEN
+        INSERT (order_id, user_id, agent_id, agent_confirmed)
+        VALUES (src.order_id, src.user_id, src.agent_id, 1);
+
+    -- If customer already confirmed, mark as delivered
+    DECLARE
+        v_customer_confirmed NUMBER;
+    BEGIN
+        SELECT NVL(customer_confirmed, 0)
+        INTO v_customer_confirmed
+        FROM delivery_confirmations
+        WHERE order_id = p_order_id;
+
+        IF v_customer_confirmed = 1 THEN
+            UPDATE orders
+            SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
+                actual_delivery_date = SYSTIMESTAMP
+            WHERE order_id = p_order_id;
+            
+            p_message := 'Delivery completed successfully. Order status updated to Delivered.';
+        ELSE
+            p_message := 'Delivery marked as completed. Waiting for customer confirmation.';
+        END IF;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            p_message := 'Delivery marked as completed. Waiting for customer confirmation.';
+    END;
+
+    COMMIT;
+    p_success := 1;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        p_success := 0;
+        p_message := 'Error confirming delivery: ' || SQLERRM;
+END confirm_agent_delivery;
+/
+
+
 -- Procedure for delivery agent to mark delivery as delivered
 CREATE OR REPLACE PROCEDURE mark_delivery_delivered (
     p_order_id IN NUMBER,
@@ -3493,6 +3582,7 @@ CREATE OR REPLACE PROCEDURE mark_delivery_delivered (
     v_assignment_exists NUMBER;
     v_current_status VARCHAR2(50);
     v_confirmation_exists NUMBER;
+    v_customer_id NUMBER;
 BEGIN
     -- Check if assignment exists and belongs to this agent
     SELECT COUNT(*)
@@ -3506,9 +3596,9 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Get current status
-    SELECT os.status_name
-    INTO v_current_status
+    -- Get current status and customer ID
+    SELECT os.status_name, o.user_id
+    INTO v_current_status, v_customer_id
     FROM orders o
     JOIN order_statuses os ON o.status_id = os.status_id
     WHERE o.order_id = p_order_id;
@@ -3540,13 +3630,7 @@ BEGIN
             agent_id, 
             agent_confirmed
         )
-        SELECT 
-            p_order_id,
-            o.user_id,
-            p_agent_id,
-            1 -- Agent confirmed
-        FROM orders o
-        WHERE o.order_id = p_order_id;
+        VALUES (p_order_id, v_customer_id, p_agent_id, 1);
     ELSE
         -- Update existing confirmation
         UPDATE delivery_confirmations
@@ -3569,23 +3653,32 @@ BEGIN
             SET status_id = (SELECT status_id FROM order_statuses WHERE status_name = 'Delivered'),
                 actual_delivery_date = SYSTIMESTAMP
             WHERE order_id = p_order_id;
+            
+            p_success := 1;
+            p_message := 'Order delivered successfully';
+
+        ELSE
+            p_success := 1;
+            p_message := 'Order marked as delivered. Waiting for customer confirmation.';
         END IF;
+
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
-            NULL;
+            p_success := 1;
+            p_message := 'Order marked as delivered. Waiting for customer confirmation.';
     END;
 
     COMMIT;
-    p_success := 1;
-    p_message := 'Delivery marked as delivered successfully. Waiting for customer confirmation.';
 
 EXCEPTION
     WHEN OTHERS THEN
         ROLLBACK;
         p_success := 0;
-        p_message := 'Error: ' || SQLERRM;
-END mark_delivery_delivered;
+        p_message := 'Error marking delivery as delivered: ' || SQLERRM;
+END;
 /
+
+
 
 -- Function to get delivery agent's current assignments count
 CREATE OR REPLACE FUNCTION get_delivery_agent_assignment_count (

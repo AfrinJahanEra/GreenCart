@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import Button from '../components/Button';
@@ -20,6 +20,14 @@ const PlantDetails = () => {
 
   const { plant, loading: plantLoading, error: plantError } = usePlantDetail(id);
   const { reviews, loading: reviewsLoading, error: reviewsError, setReviews } = usePlantReviews(id);
+
+  // Add debug logging to see what data is being received
+  useEffect(() => {
+    if (plant) {
+      console.log('Plant data received:', plant);
+      console.log('Discount data:', plant.discount);
+    }
+  }, [plant]);
 
   const toggleFavorite = () => {
     setIsFavorite(!isFavorite);
@@ -166,6 +174,47 @@ const PlantDetails = () => {
 
   const sizes = formatSizes();
   const allImages = plant?.image_urls ? [plant.primary_image, ...plant.image_urls] : [plant?.primary_image].filter(Boolean);
+  
+  // Calculate discounted price if applicable
+  const calculateDiscountedPrice = (basePrice) => {
+    if (!plant.discount) return basePrice;
+    
+    const discount = plant.discount;
+    if (discount.is_percentage) {
+      return basePrice * (1 - discount.discount_value / 100);
+    } else {
+      return Math.max(0, basePrice - discount.discount_value);
+    }
+  };
+
+  // Format discount display
+  const formatDiscountDisplay = () => {
+    if (!plant.discount) return null;
+    
+    const discount = plant.discount;
+    if (discount.is_percentage) {
+      return `${discount.discount_value}% OFF`;
+    } else {
+      return `₹${discount.discount_value} OFF`;
+    }
+  };
+
+  // Format price display with discount
+  const formatPriceDisplay = (basePrice) => {
+    const discountedPrice = calculateDiscountedPrice(basePrice);
+    
+    if (plant.discount) {
+      return (
+        <>
+          <span className="text-lg font-bold text-gray-900">₹{discountedPrice.toFixed(2)}</span>
+          <span className="ml-2 text-sm text-gray-500 line-through">₹{basePrice.toFixed(2)}</span>
+          <span className="ml-2 text-sm font-medium text-green-600">{formatDiscountDisplay()}</span>
+        </>
+      );
+    }
+    
+    return <span className="text-lg font-bold text-gray-900">₹{basePrice.toFixed(2)}</span>;
+  };
 
   return (
     <div className="bg-white">
@@ -217,7 +266,14 @@ const PlantDetails = () => {
               
               <div className="flex flex-col gap-4 sm:gap-6">
                 <div>
-                  <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold" style={{ color: theme.colors.primary }}>{plant.name}</h1>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold" style={{ color: theme.colors.primary }}>{plant.name}</h1>
+                    {plant?.discount && (
+                      <div className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium">
+                        {plant.discount.is_percentage ? `${plant.discount.discount_value}% OFF` : `₹${plant.discount.discount_value} OFF`}
+                      </div>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 sm:gap-3 mt-1 sm:mt-2">
                     <div className="text-yellow-500 text-sm sm:text-base">{'★'.repeat(Math.round(plant.avg_rating))}</div>
                     <div className="text-xs sm:text-sm text-gray-600">({plant.review_count} reviews)</div>
@@ -251,9 +307,22 @@ const PlantDetails = () => {
             
             <div className="flex flex-col gap-4 sm:gap-6 lg:sticky lg:top-4 bg-white p-4 sm:p-6">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.colors.primary }}>
-                  ${sizes.length > 0 ? sizes[selectedSize]?.price?.toFixed(2) : plant?.base_price?.toFixed(2)}
-                </h2>
+                <div>
+                  {plant?.discount ? (
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.colors.primary }}>
+                        {formatPriceDisplay(sizes.length > 0 ? sizes[selectedSize]?.price : plant?.base_price)}
+                      </h2>
+                      <div className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium">
+                        {formatDiscountDisplay()}
+                      </div>
+                    </div>
+                  ) : (
+                    <h2 className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.colors.primary }}>
+                      ₹{sizes.length > 0 ? sizes[selectedSize]?.price?.toFixed(2) : plant?.base_price?.toFixed(2)}
+                    </h2>
+                  )}
+                </div>
                 <button 
                   onClick={toggleFavorite}
                   className="p-1 sm:p-2 text-gray-400 hover:text-red-500 transition-colors"
@@ -283,8 +352,17 @@ const PlantDetails = () => {
                     >
                       <div className="flex justify-between items-center">
                         <span className="font-medium text-xs sm:text-sm lg:text-base">{size.name}</span>
-                        <span className="font-bold text-xs sm:text-sm lg:text-base" style={{ color: theme.colors.primary }}>${size.price?.toFixed(2)}</span>
+                        {plant?.discount ? (
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs sm:text-sm lg:text-base" style={{ color: theme.colors.primary }}>
+                              {formatPriceDisplay(size.price)}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="font-bold text-xs sm:text-sm lg:text-base" style={{ color: theme.colors.primary }}>₹{size.price?.toFixed(2)}</span>
+                        )}
                       </div>
+
                     </div>
                   ))}
                 </div>

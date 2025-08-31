@@ -21,6 +21,10 @@ const AdminDashboard = () => {
     applyDiscount,
     deleteCustomer,
     refreshAllData,
+    fetchDiscountTypes,
+    fetchAllPlants,
+    fetchAllCategories,
+    fetchAllDiscounts,
   } = useAdminDashboard();
 
   const handleTabChange = (tab) => {
@@ -141,6 +145,10 @@ const AdminDashboard = () => {
             applyDiscount,
             deleteCustomer,
             refreshAllData,
+            fetchDiscountTypes,
+            fetchAllPlants,
+            fetchAllCategories,
+            fetchAllDiscounts,
           }} />
         </div>
       </div>

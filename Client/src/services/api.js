@@ -114,6 +114,11 @@ export const adminAPI = {
       requestor_id: requestorId, 
       customer_id: customerId 
     }),
+  // New endpoints for discount functionality
+  getDiscountTypes: () => api.get('/admin_dashboard/discount-types/'),
+  getAllPlants: () => api.get('/admin_dashboard/all-plants/'),
+  getAllCategories: () => api.get('/admin_dashboard/all-categories/'),
+  getAllDiscounts: () => api.get('/admin_dashboard/all-discounts/'),
 };
 
 export const sellerAPI = {
@@ -172,12 +177,6 @@ export const deliveryAgentAPI = {
     const url = status 
       ? `/delivery_agent/assignment-count/${agentId}/?status=${status}`
       : `/delivery_agent/assignment-count/${agentId}/`;
-    return api.get(url);
-  },
-  getMonthlyEarnings: (agentId, year = null) => {
-    const url = year 
-      ? `/delivery_agent/monthly-earnings/${agentId}/?year=${year}`
-      : `/delivery_agent/monthly-earnings/${agentId}/`;
     return api.get(url);
   },
 };

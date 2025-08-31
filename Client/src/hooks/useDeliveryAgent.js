@@ -12,13 +12,11 @@ export const useDeliveryAgent = (agentId) => {
     completed_assignments: []
   });
   
-  const [monthlyEarnings, setMonthlyEarnings] = useState([]);
   const [assignmentCount, setAssignmentCount] = useState(0);
   
   const [loading, setLoading] = useState({
     dashboard: false,
     orders: false,
-    monthlyEarnings: false,
     assignmentCount: false,
     markDelivery: false
   });
@@ -26,7 +24,6 @@ export const useDeliveryAgent = (agentId) => {
   const [error, setError] = useState({
     dashboard: null,
     orders: null,
-    monthlyEarnings: null,
     assignmentCount: null,
     markDelivery: null
   });
@@ -260,41 +257,11 @@ export const useDeliveryAgent = (agentId) => {
     }
   };
 
-  // Fetch monthly earnings
-  const fetchMonthlyEarnings = async (year = null) => {
-    try {
-      setLoading(prev => ({ ...prev, monthlyEarnings: true }));
-      setError(prev => ({ ...prev, monthlyEarnings: null }));
-      
-      console.log('Fetching monthly earnings for agent:', agentId, 'for year:', year);
-      
-      const response = await deliveryAgentAPI.getMonthlyEarnings(agentId, year);
-      
-      console.log('Monthly earnings response:', response.data);
-      
-      if (response.data.success) {
-        const earningsData = response.data.monthly_earnings || [];
-        setMonthlyEarnings(earningsData);
-        return earningsData; // Return the data for component use
-      } else {
-        throw new Error(response.data.error || 'Failed to fetch monthly earnings');
-      }
-    } catch (err) {
-      const errorMessage = handleApiError(err);
-      setError(prev => ({ ...prev, monthlyEarnings: errorMessage }));
-      console.error('Error fetching monthly earnings:', err);
-      return []; // Return empty array on error
-    } finally {
-      setLoading(prev => ({ ...prev, monthlyEarnings: false }));
-    }
-  };
-
   // Refresh all data
   const refreshAllData = useCallback(async () => {
     console.log('Refreshing all delivery agent data for agent:', agentId);
     await Promise.all([
       fetchDashboard(),
-      fetchMonthlyEarnings(),
       fetchAssignmentCount()
     ]);
   }, [fetchDashboard, agentId]);
@@ -309,7 +276,6 @@ export const useDeliveryAgent = (agentId) => {
 
   return {
     dashboardData,
-    monthlyEarnings,
     assignmentCount,
     loading,
     error,
@@ -321,7 +287,6 @@ export const useDeliveryAgent = (agentId) => {
     markDeliveryCompleted,
     markDeliveryCompletedLegacy,
     fetchAssignmentCount,
-    fetchMonthlyEarnings,
     refreshAllData
   };
 };

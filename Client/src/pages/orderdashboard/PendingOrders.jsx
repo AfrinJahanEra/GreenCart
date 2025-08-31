@@ -18,9 +18,18 @@ const PendingOrders = () => {
   const pendingOrders = orders?.pendingConfirmation || [];
 
   const handleConfirmDelivery = async (orderId) => {
-    const result = await confirmDelivery(orderId);
-    if (result.success) {
-      // Success message or refresh
+    try {
+      const result = await confirmDelivery(orderId);
+      if (result.success) {
+        alert('Delivery confirmed successfully!');
+        // Refresh the orders after confirmation
+        await fetchPendingConfirmationOrders();
+      } else {
+        alert(`Error: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error confirming delivery:', error);
+      alert('Failed to confirm delivery. Please try again.');
     }
   };
 

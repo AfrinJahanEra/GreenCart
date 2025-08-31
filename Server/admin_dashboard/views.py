@@ -475,28 +475,140 @@ def apply_discount(request):
             discount_type_id = data.get('discount_type_id')
             discount_value = data.get('discount_value')
             is_percentage = data.get('is_percentage')
-            start_date = datetime.strptime(data.get('start_date'), '%Y-%m-%d %H:%M:%S')
-            end_date = datetime.strptime(data.get('end_date'), '%Y-%m-%d %H:%M:%S')
+            start_date = data.get('start_date')
+            end_date = data.get('end_date')
             category_id = data.get('category_id')
             plant_id = data.get('plant_id')
 
+            # Log the incoming data for debugging
+            print(f"Received discount data: {data}")
+            print(f"Discount type ID: {discount_type_id}")
+            print(f"Type of discount_type_id: {type(discount_type_id)}")
+
+            # Convert datetime strings to datetime objects with better error handling
+            if isinstance(start_date, str):
+                # Handle various datetime formats
+                datetime_formats = [
+                    '%Y-%m-%dT%H:%M',
+                    '%Y-%m-%d %H:%M:%S',
+                    '%Y-%m-%dT%H:%M:%S',
+                    '%Y-%m-%d %H:%M'
+                ]
+                
+                parsed_start_date = None
+                for fmt in datetime_formats:
+                    try:
+                        parsed_start_date = datetime.strptime(start_date, fmt)
+                        break
+                    except ValueError:
+                        continue
+                
+                if parsed_start_date is None:
+                    return JsonResponse({'status': 'error', 'message': 'Invalid start date format'}, status=400)
+                start_date = parsed_start_date
+            
+            if isinstance(end_date, str):
+                # Handle various datetime formats
+                datetime_formats = [
+                    '%Y-%m-%dT%H:%M',
+                    '%Y-%m-%d %H:%M:%S',
+                    '%Y-%m-%dT%H:%M:%S',
+                    '%Y-%m-%d %H:%M'
+                ]
+                
+                parsed_end_date = None
+                for fmt in datetime_formats:
+                    try:
+                        parsed_end_date = datetime.strptime(end_date, fmt)
+                        break
+                    except ValueError:
+                        continue
+                
+                if parsed_end_date is None:
+                    return JsonResponse({'status': 'error', 'message': 'Invalid end date format'}, status=400)
+                end_date = parsed_end_date
+
             with connection.cursor() as cursor:
+                # Validate discount type
+                print(f"Validating discount type ID: {discount_type_id}")
+                print(f"Type of discount_type_id: {type(discount_type_id)}")
                 cursor.execute("""
-                    BEGIN
-                        apply_discount(:1, :2, :3, :4, :5, :6, :7);
-                    END;
-                """, [
-                    discount_type_id, discount_value, is_percentage,
-                    start_date, end_date, category_id, plant_id
-                ])
+                    SELECT name FROM discount_types WHERE discount_type_id = :discount_type_id
+                """, {'discount_type_id': discount_type_id})
+                discount_type_result = cursor.fetchone()
+                
+                if not discount_type_result:
+                    # Let's see what discount types are actually available
+                    cursor.execute("SELECT discount_type_id, name FROM discount_types")
+                    available_types = cursor.fetchall()
+                    print(f"Available discount types: {available_types}")
+                    return JsonResponse({'status': 'error', 'message': f'Invalid discount type. Available types: {available_types}'}, status=400)
+                
+                discount_type_name = discount_type_result[0]
+                print(f"Found discount type: {discount_type_name}")
+                
+                # Validate required fields based on discount type
+                if discount_type_name == 'Category' and not category_id:
+                    return JsonResponse({'status': 'error', 'message': 'Category ID is required for category discount'}, status=400)
+                
+                if discount_type_name == 'Plant-specific' and not plant_id:
+                    return JsonResponse({'status': 'error', 'message': 'Plant ID is required for plant-specific discount'}, status=400)
+                
+                # Create discount
+                cursor.execute("""
+                    INSERT INTO discounts (discount_type_id, name, description, discount_value, is_percentage, start_date, end_date)
+                    VALUES (:discount_type_id, :name, :description, :discount_value, :is_percentage, :start_date, :end_date)
+                """, {
+                    'discount_type_id': discount_type_id,
+                    'name': f"{discount_type_name} Discount",
+                    'description': f"Applied {discount_type_name.lower()} discount",
+                    'discount_value': float(discount_value) if discount_value else 0.0,
+                    'is_percentage': int(is_percentage) if is_percentage is not None else 1,
+                    'start_date': start_date,
+                    'end_date': end_date
+                })
+                
+                # Get the created discount ID (for Oracle)
+                cursor.execute("SELECT MAX(discount_id) FROM discounts")
+                discount_id_result = cursor.fetchone()
+                discount_id = discount_id_result[0] if discount_id_result else None
+                
+                if not discount_id:
+                    return JsonResponse({'status': 'error', 'message': 'Failed to create discount'}, status=500)
+                
+                print(f"Created discount with ID: {discount_id}")
+                
+                # Apply discount to plants or categories based on discount type
+                if discount_type_name == 'Plant-specific':
+                    cursor.execute("""
+                        INSERT INTO plant_discounts (plant_id, discount_id)
+                        VALUES (:plant_id, :discount_id)
+                    """, {'plant_id': plant_id, 'discount_id': discount_id})
+                elif discount_type_name == 'Category':
+                    cursor.execute("""
+                        INSERT INTO plant_discounts (category_id, discount_id)
+                        VALUES (:category_id, :discount_id)
+                    """, {'category_id': category_id, 'discount_id': discount_id})
+                else:
+                    # For global discounts (Seasonal, Festive, Special), apply to all plants
+                    cursor.execute("""
+                        INSERT INTO plant_discounts (plant_id, discount_id)
+                        SELECT plant_id, :discount_id FROM plants WHERE is_active = 1
+                    """, {'discount_id': discount_id})
                 
                 return JsonResponse({
                     'status': 'success',
                     'message': 'Discount applied successfully'
                 }, status=200)
         except (DatabaseError, ValueError) as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"Error in apply_discount: {error_details}")
             return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"Unexpected error in apply_discount: {error_details}")
             return JsonResponse({'status': 'error', 'message': f'Unexpected error: {str(e)}'}, status=500)
     return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
 
@@ -696,3 +808,311 @@ def delete_customer(request):
             'status': 'error', 
             'message': f'Server error: {str(e)}'
         }, status=500)
+
+@csrf_exempt
+def get_discount_types(request):
+    if request.method == 'GET':
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT discount_type_id, name, description
+                    FROM discount_types
+                    ORDER BY discount_type_id
+                """)
+                
+                columns = [col[0].lower() for col in cursor.description]
+                discount_types = []
+                while True:
+                    row = cursor.fetchone()
+                    if row is None:
+                        break
+                    discount_types.append(dict(zip(columns, row)))
+                
+                print(f"Returning discount types: {discount_types}")
+                
+                # If no discount types exist, create them
+                if not discount_types:
+                    # Insert default discount types
+                    default_types = [
+                        ('Seasonal', 'Seasonal discount'),
+                        ('Category', 'Category discount'),
+                        ('Plant-specific', 'Plant specific discount'),
+                        ('Festive', 'Festive discount'),
+                        ('Special', 'Special discount')
+                    ]
+                    
+                    for name, description in default_types:
+                        cursor.execute("""
+                            INSERT INTO discount_types (name, description)
+                            VALUES (:name, :description)
+                        """, {'name': name, 'description': description})
+                    
+                    # Fetch the newly created discount types
+                    cursor.execute("""
+                        SELECT discount_type_id, name, description
+                        FROM discount_types
+                        ORDER BY discount_type_id
+                    """)
+                    
+                    columns = [col[0].lower() for col in cursor.description]
+                    discount_types = []
+                    while True:
+                        row = cursor.fetchone()
+                        if row is None:
+                            break
+                        discount_types.append(dict(zip(columns, row)))
+                
+                return JsonResponse({
+                    'status': 'success',
+                    'data': discount_types
+                }, status=200)
+        except DatabaseError as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Unexpected error: {str(e)}'}, status=500)
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
+
+@csrf_exempt
+def debug_discount_types(request):
+    """Debug endpoint to check what discount types are available"""
+    if request.method == 'GET':
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT discount_type_id, name, description
+                    FROM discount_types
+                    ORDER BY discount_type_id
+                """)
+                
+                columns = [col[0].lower() for col in cursor.description]
+                discount_types = []
+                while True:
+                    row = cursor.fetchone()
+                    if row is None:
+                        break
+                    discount_types.append(dict(zip(columns, row)))
+                
+                return JsonResponse({
+                    'status': 'success',
+                    'data': discount_types,
+                    'message': 'Debug endpoint - showing all discount types'
+                }, status=200)
+        except DatabaseError as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Unexpected error: {str(e)}'}, status=500)
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
+
+@csrf_exempt
+def get_all_plants(request):
+    if request.method == 'GET':
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT 
+                        p.plant_id,
+                        p.name,
+                        p.base_price,
+                        p.stock_quantity,
+                        (SELECT pi.image_url 
+                         FROM plant_images pi 
+                         WHERE pi.plant_id = p.plant_id AND pi.is_primary = 1 
+                         AND ROWNUM = 1) AS primary_image
+                    FROM plants p
+                    WHERE p.is_active = 1
+                    ORDER BY p.name
+                """)
+                
+                columns = [col[0].lower() for col in cursor.description]
+                plants = []
+                while True:
+                    row = cursor.fetchone()
+                    if row is None:
+                        break
+                    # Convert decimal values to float
+                    row_dict = dict(zip(columns, row))
+                    if 'base_price' in row_dict and row_dict['base_price'] is not None:
+                        row_dict['base_price'] = float(row_dict['base_price'])
+                    if 'stock_quantity' in row_dict and row_dict['stock_quantity'] is not None:
+                        row_dict['stock_quantity'] = int(row_dict['stock_quantity'])
+                    plants.append(row_dict)
+                
+                return JsonResponse({
+                    'status': 'success',
+                    'data': plants
+                }, status=200)
+        except DatabaseError as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"Error in get_all_plants: {error_details}")
+            return JsonResponse({'status': 'error', 'message': f'Unexpected error: {str(e)}'}, status=500)
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
+
+@csrf_exempt
+def get_all_categories(request):
+    if request.method == 'GET':
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT category_id, name
+                    FROM plant_categories
+                    ORDER BY name
+                """)
+                
+                columns = [col[0].lower() for col in cursor.description]
+                categories = []
+                while True:
+                    row = cursor.fetchone()
+                    if row is None:
+                        break
+                    categories.append(dict(zip(columns, row)))
+                
+                return JsonResponse({
+                    'status': 'success',
+                    'data': categories
+                }, status=200)
+        except DatabaseError as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Unexpected error: {str(e)}'}, status=500)
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
+
+@csrf_exempt
+def get_all_discounts(request):
+    if request.method == 'GET':
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT 
+                        d.discount_id,
+                        dt.name as discount_type,
+                        d.name as discount_name,
+                        d.description,
+                        d.discount_value,
+                        d.is_percentage,
+                        d.start_date,
+                        d.end_date,
+                        d.is_active,
+                        p.plant_id,
+                        p.name as plant_name,
+                        pc.category_id,
+                        pc.name as category_name
+                    FROM discounts d
+                    JOIN discount_types dt ON d.discount_type_id = dt.discount_type_id
+                    LEFT JOIN plant_discounts pd ON d.discount_id = pd.discount_id
+                    LEFT JOIN plants p ON pd.plant_id = p.plant_id
+                    LEFT JOIN plant_categories pc ON pd.category_id = pc.category_id
+                    ORDER BY d.discount_id DESC
+                """)
+                
+                columns = [col[0].lower() for col in cursor.description]
+                raw_discounts = []
+                while True:
+                    row = cursor.fetchone()
+                    if row is None:
+                        break
+                    row_dict = dict(zip(columns, row))
+                    # Convert decimal values to float
+                    if 'discount_value' in row_dict and row_dict['discount_value'] is not None:
+                        row_dict['discount_value'] = float(row_dict['discount_value'])
+                    raw_discounts.append(row_dict)
+                
+                # Group discounts by discount_id to avoid duplicates
+                discounts_dict = {}
+                for discount in raw_discounts:
+                    discount_id = discount['discount_id']
+                    if discount_id not in discounts_dict:
+                        discounts_dict[discount_id] = {
+                            'discount_id': discount_id,
+                            'discount_type': discount['discount_type'],
+                            'discount_name': discount['discount_name'],
+                            'description': discount['description'],
+                            'discount_value': discount['discount_value'],
+                            'is_percentage': discount['is_percentage'],
+                            'start_date': discount['start_date'],
+                            'end_date': discount['end_date'],
+                            'is_active': discount['is_active'],
+                            'plant_id': None,
+                            'plant_name': None,
+                            'category_id': None,
+                            'category_name': None
+                        }
+                    
+                    # For category discounts, set category info (only once)
+                    if discount['category_id'] is not None and discounts_dict[discount_id]['category_id'] is None:
+                        discounts_dict[discount_id]['category_id'] = discount['category_id']
+                        discounts_dict[discount_id]['category_name'] = discount['category_name']
+                    
+                    # For plant-specific discounts, set plant info (only once)
+                    if discount['plant_id'] is not None and discounts_dict[discount_id]['plant_id'] is None:
+                        discounts_dict[discount_id]['plant_id'] = discount['plant_id']
+                        discounts_dict[discount_id]['plant_name'] = discount['plant_name']
+                
+                # Convert to list for display
+                discounts = list(discounts_dict.values())
+                
+                print(f"Returning {len(discounts)} discounts: {discounts}")
+                
+                return JsonResponse({
+                    'status': 'success',
+                    'data': discounts
+                }, status=200)
+        except DatabaseError as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Unexpected error: {str(e)}'}, status=500)
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
+
+@csrf_exempt
+def get_active_discounts(request):
+    if request.method == 'GET':
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT 
+                        d.discount_id,
+                        dt.name as discount_type,
+                        d.name as discount_name,
+                        d.description,
+                        d.discount_value,
+                        d.is_percentage,
+                        d.start_date,
+                        d.end_date,
+                        p.plant_id,
+                        p.name as plant_name,
+                        pc.category_id,
+                        pc.name as category_name
+                    FROM discounts d
+                    JOIN discount_types dt ON d.discount_type_id = dt.discount_type_id
+                    LEFT JOIN plant_discounts pd ON d.discount_id = pd.discount_id
+                    LEFT JOIN plants p ON pd.plant_id = p.plant_id
+                    LEFT JOIN plant_categories pc ON pd.category_id = pc.category_id
+                    WHERE d.is_active = 1
+                    AND d.start_date <= SYSTIMESTAMP
+                    AND d.end_date >= SYSTIMESTAMP
+                    ORDER BY d.discount_id DESC
+                """)
+                
+                columns = [col[0].lower() for col in cursor.description]
+                discounts = []
+                while True:
+                    row = cursor.fetchone()
+                    if row is None:
+                        break
+                    row_dict = dict(zip(columns, row))
+                    # Convert decimal values to float
+                    if 'discount_value' in row_dict and row_dict['discount_value'] is not None:
+                        row_dict['discount_value'] = float(row_dict['discount_value'])
+                    discounts.append(row_dict)
+                
+                return JsonResponse({
+                    'status': 'success',
+                    'data': discounts
+                }, status=200)
+        except DatabaseError as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': f'Unexpected error: {str(e)}'}, status=500)
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
