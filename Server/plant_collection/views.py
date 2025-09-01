@@ -13,12 +13,26 @@ def plants_by_category(request, slug):
             rows = [dict(zip(columns, row)) for row in out_cursor.fetchall()]
             out_cursor.close()
         
-        # Ensure image fields are properly named
+        # Ensure image fields are properly named and id field is set
         for plant in rows:
+            # Map plant_id to id for frontend compatibility
+            if 'plant_id' in plant and 'id' not in plant:
+                plant['id'] = plant['plant_id']
+            # Map primary_image to image for frontend compatibility
             if 'primary_image' in plant and 'image' not in plant:
                 plant['image'] = plant['primary_image']
+            # Ensure image_url field exists
             if 'image_url' not in plant and 'image' in plant:
                 plant['image_url'] = plant['image']
+            # Map other fields for consistency
+            if 'base_price' in plant and 'price' not in plant:
+                plant['price'] = float(plant['base_price'])
+            # Format rating for display
+            if 'avg_rating' in plant:
+                rating = float(plant['avg_rating'])
+                full_stars = int(round(rating))
+                plant['ratingStars'] = '★' * full_stars + '☆' * (5 - full_stars)
+                plant['reviewCount'] = plant.get('review_count', 0)
                 
         return JsonResponse({"plants": rows})
     except Exception as e:
@@ -35,12 +49,26 @@ def search_plants(request):
             rows = [dict(zip(columns, row)) for row in out_cursor.fetchall()]
             out_cursor.close()
         
-        # Ensure image fields are properly named
+        # Ensure image fields are properly named and id field is set
         for plant in rows:
+            # Map plant_id to id for frontend compatibility
+            if 'plant_id' in plant and 'id' not in plant:
+                plant['id'] = plant['plant_id']
+            # Map primary_image to image for frontend compatibility
             if 'primary_image' in plant and 'image' not in plant:
                 plant['image'] = plant['primary_image']
+            # Ensure image_url field exists
             if 'image_url' not in plant and 'image' in plant:
                 plant['image_url'] = plant['image']
+            # Map other fields for consistency
+            if 'base_price' in plant and 'price' not in plant:
+                plant['price'] = float(plant['base_price'])
+            # Format rating for display
+            if 'avg_rating' in plant:
+                rating = float(plant['avg_rating'])
+                full_stars = int(round(rating))
+                plant['ratingStars'] = '★' * full_stars + '☆' * (5 - full_stars)
+                plant['reviewCount'] = plant.get('review_count', 0)
                 
         return JsonResponse({"plants": rows})
     except Exception as e:

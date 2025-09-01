@@ -10,11 +10,10 @@ import { useAuth } from '../contexts/AuthContext';
 
 const PlantDetails = () => {
   const { id } = useParams();
-  const { user } = useAuth(); // Use AuthContext instead of localStorage
+  const { user, refreshCartItemsCount } = useAuth(); // Get refreshCartItemsCount from AuthContext
   const [selectedSize, setSelectedSize] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [isFavorite, setIsFavorite] = useState(false);
-  const [startImageIndex, setStartImageIndex] = useState(0);
   const [newReview, setNewReview] = useState({ rating: 5, text: '' });
   const [showReviewForm, setShowReviewForm] = useState(false);
 
@@ -105,6 +104,8 @@ const PlantDetails = () => {
       
       if (response.data.success) {
         alert(`${quantity} ${plant.name} (${selectedSizeData.name}) added to cart!`);
+        // Refresh cart items count in header
+        refreshCartItemsCount();
       } else {
         throw new Error(response.data.error || 'Failed to add to cart');
       }
@@ -112,29 +113,6 @@ const PlantDetails = () => {
       console.error('Error adding to cart:', error);
       alert(error.response?.data?.error || 'Failed to add to cart. Please try again.');
     }
-  };
-
-  const getVisibleImages = () => {
-    if (window.innerWidth >= 1024) return 2.5; // lg screens
-    if (window.innerWidth >= 640) return 2; // sm screens
-    return 1; // mobile
-  };
-
-  const nextImages = () => {
-    if (!plant) return;
-    
-    setStartImageIndex((prevIndex) => {
-      const visibleImages = getVisibleImages();
-      return prevIndex + 1 >= plant.image_urls.length - Math.floor(visibleImages) ? 0 : prevIndex + 1;
-    });
-  };
-
-  const prevImages = () => {
-    if (!plant) return;
-    
-    setStartImageIndex((prevIndex) => 
-      prevIndex - 1 < 0 ? Math.max(0, plant.image_urls.length - Math.ceil(getVisibleImages())) : prevIndex - 1
-    );
   };
 
   // Format sizes from API response
@@ -173,12 +151,8 @@ const PlantDetails = () => {
   }
 
   const sizes = formatSizes();
-  // Parse image URLs if they're provided as a comma-separated string
-  const imageUrls = plant?.image_urls ? 
-    (typeof plant.image_urls === 'string' ? plant.image_urls.split(',') : plant.image_urls) : 
-    [];
-  // Limit to 2 images as requested
-  const allImages = [plant?.primary_image, ...imageUrls].filter(Boolean).slice(0, 2);
+  // Simplified image handling for single image
+  const primaryImage = plant?.primary_image || plant?.image || (plant?.image_urls && plant.image_urls[0]) || '';
   
   // Calculate discounted price if applicable
   const calculateDiscountedPrice = (basePrice) => {
@@ -229,44 +203,13 @@ const PlantDetails = () => {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 lg:gap-12">
             <div className="flex flex-col gap-4 sm:gap-6">
-              <div className="relative w-full">
-                <div className="overflow-hidden w-full">
-                  <div 
-                    className="flex transition-transform duration-500 ease-in-out"
-                    style={{ 
-                      transform: `translateX(-${startImageIndex * (100 / (window.innerWidth >= 1024 ? 3 : window.innerWidth >= 640 ? 2 : 1))}%)`
-                    }}
-                  >
-                    {allImages.map((image, index) => (
-                      <img
-                        key={index}
-                        src={image}
-                        alt={`${plant.name} ${index + 1}`}
-                        className="w-full sm:w-1/2 lg:w-1/3 h-48 sm:h-64 md:h-80 lg:h-96 object-cover rounded flex-shrink-0 px-1"
-                      />
-                    ))}
-                  </div>
-                </div>
-                {allImages.length > getVisibleImages() && (
-                  <>
-                    <button
-                      onClick={prevImages}
-                      className="absolute left-1 sm:left-2 top-1/2 transform -translate-y-1/2 bg-gray-800 bg-opacity-50 text-white p-1 sm:p-2 rounded-full hover:bg-opacity-75 transition-colors"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 sm:h-6 w-5 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={nextImages}
-                      className="absolute right-1 sm:right-2 top-1/2 transform -translate-y-1/2 bg-gray-800 bg-opacity-50 text-white p-1 sm:p-2 rounded-full hover:bg-opacity-75 transition-colors"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 sm:h-6 w-5 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-                  </>
-                )}
+              {/* Show just one image in a good size */}
+              <div className="flex justify-left">
+                <img
+                  src={primaryImage}
+                  alt={plant?.name}
+                  className="max-h-96 w-auto object-contain rounded-lg"
+                />
               </div>
               
               <div className="flex flex-col gap-4 sm:gap-6">
@@ -460,8 +403,8 @@ const PlantDetails = () => {
                       <p className="mt-1 sm:mt-2 text-xs sm:text-sm lg:text-base text-gray-700 italic">"{review.review_text}"</p>
                       <p className="text-right text-xs sm:text-sm text-gray-600 mt-1 sm:mt-2">– {review.author}</p>
                     </div>
-                  )))
-                )}
+                  ))))
+                }
               </div>
             </div>
           </div>

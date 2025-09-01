@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { cartAPI } from '../services/api';
+import { useAuth } from '../contexts/AuthContext'; // Import useAuth
 
 export const useCart = (userId) => {
   const [cartItems, setCartItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const { refreshCartItemsCount } = useAuth(); // Get refreshCartItemsCount from AuthContext
 
   const fetchCartItems = async () => {
     if (!userId) {
@@ -36,6 +38,7 @@ export const useCart = (userId) => {
       
       if (response.data.success) {
         await fetchCartItems(); // Refresh cart items
+        refreshCartItemsCount(); // Refresh cart items count in header
         return { success: true };
       } else {
         throw new Error(response.data.error || 'Failed to add to cart');
@@ -54,6 +57,7 @@ export const useCart = (userId) => {
       
       if (response.data.success) {
         await fetchCartItems(); // Refresh cart items
+        refreshCartItemsCount(); // Refresh cart items count in header
       } else {
         throw new Error(response.data.error || 'Failed to toggle item');
       }
@@ -73,6 +77,7 @@ export const useCart = (userId) => {
       
       if (response.data.success) {
         await fetchCartItems(); // Refresh cart items
+        refreshCartItemsCount(); // Refresh cart items count in header
       } else {
         throw new Error(response.data.error || 'Failed to update quantity');
       }
@@ -90,6 +95,7 @@ export const useCart = (userId) => {
       
       if (response.data.success) {
         await fetchCartItems(); // Refresh cart items
+        refreshCartItemsCount(); // Refresh cart items count in header
       } else {
         throw new Error(response.data.error || 'Failed to remove item');
       }
