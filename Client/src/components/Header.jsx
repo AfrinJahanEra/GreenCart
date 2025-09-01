@@ -7,27 +7,11 @@ import SearchBar from './SearchBar';
 import { theme } from '../theme';
 
 const Header = () => {
-  const { user, loading, logout } = useAuth(); // Added logout function
+  const { user, loading, logout, cartItemsCount, pendingOrdersCount } = useAuth(); // Get pendingOrdersCount from AuthContext
   const [showCart, setShowCart] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false); // Added state for logout confirmation
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const navigate = useNavigate();
-
-  // Placeholder for orders count (replace with actual API call later)
-  const [orders, setOrders] = useState([]);
-
-  useEffect(() => {
-    // Fetch orders for customer role (mock for now)
-    if (user && user.role === 'customer') {
-      setOrders([
-        { id: 'GC-1001', status: 'Delivered' },
-        { id: 'GC-1002', status: 'Shipped' },
-      ]);
-    }
-  }, [user]);
-
-  // Cart items count (mock for now)
-  const cartItemsCount = 2;
 
   // Define dashboard link based on role
   const getDashboardLink = () => {
@@ -129,9 +113,11 @@ const Header = () => {
                           d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"
                         />
                       </svg>
-                      <span className="absolute -top-1 -right-1 bg-green-600 text-white text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center">
-                        {cartItemsCount}
-                      </span>
+                      {cartItemsCount > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-green-600 text-white text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center">
+                          {cartItemsCount}
+                        </span>
+                      )}
                     </button>
                     <button
                       onClick={() => navigate('/orders')}
@@ -152,9 +138,11 @@ const Header = () => {
                           d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
                         />
                       </svg>
-                      <span className="absolute -top-1 -right-1 bg-green-600 text-white text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center">
-                        {orders.length}
-                      </span>
+                      {pendingOrdersCount > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-green-600 text-white text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center">
+                          {pendingOrdersCount}
+                        </span>
+                      )}
                     </button>
                     {/* Logout Button for Customer */}
                     <button
@@ -241,7 +229,10 @@ const Header = () => {
       {user && user.role === 'customer' && (
         <>
           <CartSidebar showCart={showCart} setShowCart={setShowCart} />
-          <ProfileSidebar showProfile={showProfile} setShowProfile={setShowProfile} />
+          <ProfileSidebar 
+            isOpen={showProfile} 
+            onClose={() => setShowProfile(false)} 
+          />
         </>
       )}
 
