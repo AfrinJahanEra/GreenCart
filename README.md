@@ -303,11 +303,11 @@ Make sure none of these ports are already in use.
 
 <div align="center">
   
-| $\large\text{\color{#DAA5A4}{Name}}$ | $\large\text{\color{#D6C8FF}{Github Profile}}$ | $\large\text{\color{#C8A2C8}{Contribution}}$ |
-|--------------------------------------|------------------------------------------------|----------------------------------------------|
-| Afrin Jahan Era | [github](https://github.com/AfrinJahanEra) | Full Stack |
-| Ramisa Anan Rahman | [github](https://github.com/Ramisa105) | Frontend |
-| Ridika Naznin | [github](https://github.com/ridika-2004) | Backend |
+| $\large\text{\color{#DAA5A4}{Name}}$ | $\large\text{\color{#D6C8FF}{Github Profile}}$ | 
+|--------------------------------------|------------------------------------------------|
+| Afrin Jahan Era | [github](https://github.com/AfrinJahanEra) |
+| Ramisa Anan Rahman | [github](https://github.com/Ramisa105) |
+| Ridika Naznin | [github](https://github.com/ridika-2004) |
 
 </div>
 
