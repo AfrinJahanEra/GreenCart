@@ -4,15 +4,15 @@ import html2pdf from 'html2pdf.js';
 import { theme } from '../theme';
 import Button from './Button';
 import { useCart } from '../hooks/useCart';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContext'; // Import useAuth
 
 const CartSidebar = ({ showCart, setShowCart }) => {
   const navigate = useNavigate();
   const sidebarRef = useRef();
   const [isClosing, setIsClosing] = useState(false);
   
-  // Get user from AuthContext
-  const { user } = useAuth();
+  // Get user and refreshCartItemsCount from AuthContext
+  const { user, refreshCartItemsCount } = useAuth();
   const userId = user?.user_id;
   
   // Use the cart hook
@@ -47,6 +47,8 @@ const CartSidebar = ({ showCart, setShowCart }) => {
   const toggleSelection = async (cartId) => {
     try {
       await toggleCartItem(cartId);
+      // Refresh cart items count in header
+      refreshCartItemsCount();
     } catch (error) {
       console.error('Error toggling cart item:', error);
       alert('Failed to update item selection');
@@ -56,6 +58,8 @@ const CartSidebar = ({ showCart, setShowCart }) => {
   const removeItem = async (cartId) => {
     try {
       await removeFromCart(cartId);
+      // Refresh cart items count in header
+      refreshCartItemsCount();
     } catch (error) {
       console.error('Error removing cart item:', error);
       alert('Failed to remove item from cart');
@@ -66,6 +70,8 @@ const CartSidebar = ({ showCart, setShowCart }) => {
     if (newQuantity < 1) return;
     try {
       await updateQuantity(cartId, newQuantity);
+      // Refresh cart items count in header
+      refreshCartItemsCount();
     } catch (error) {
       console.error('Error updating quantity:', error);
       alert('Failed to update item quantity');
