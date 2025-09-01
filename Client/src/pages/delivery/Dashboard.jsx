@@ -11,6 +11,13 @@ const Dashboard = () => {
   const pendingOrders = dashboardData?.pending_orders || [];
   const completedOrders = dashboardData?.completed_orders || [];
 
+  // Calculate available slots (assuming max 3 slots per agent)
+  const maxSlots = 3;
+  const usedSlots = stats.pending_assignments || 0;
+  const availableSlots = Math.max(0, maxSlots - usedSlots);
+  // Agent is active if they have pending deliveries (as per project specification)
+  const isActive = usedSlots > 0;
+
   if (loading.dashboard) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -58,13 +65,59 @@ const Dashboard = () => {
         </div>
       )}
       
+      {/* Agent Status Card */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+          <div>
+            <h2 className="text-xl font-bold" style={{ color: theme.colors.primary }}>
+              {user?.first_name} {user?.last_name}
+            </h2>
+            <p className="text-gray-600">{user?.email}</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-center">
+              <div className={`px-4 py-2 rounded-full text-sm font-medium ${
+                isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+              }`}>
+                {isActive ? 'Active' : 'Inactive'}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Status</p>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-bold text-gray-900">{availableSlots}</div>
+              <p className="text-xs text-gray-500">Available Slots</p>
+            </div>
+            {!isActive && (
+              <div className="text-center">
+                <div className="text-xl font-bold text-orange-600">{usedSlots}</div>
+                <p className="text-xs text-gray-500">Pending Deliveries</p>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* Progress bar for slots */}
+        <div className="mt-4">
+          <div className="flex justify-between text-sm text-gray-600 mb-1">
+            <span>Delivery Slots</span>
+            <span>{usedSlots}/{maxSlots}</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className={`h-2 rounded-full ${isActive ? 'bg-green-500' : 'bg-red-500'}`}
+              style={{ width: `${(usedSlots / maxSlots) * 100}%` }}
+            ></div>
+          </div>
+        </div>
+      </div>
+
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center">
             <div className="p-2 bg-blue-100 rounded-lg">
               <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002-2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
             </div>
             <div className="ml-4">
@@ -120,7 +173,9 @@ const Dashboard = () => {
       {/* Pending Orders Section */}
       <div className="bg-white rounded-lg shadow">
         <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold" style={{ color: theme.colors.primary }}>Pending Deliveries</h2>
+          <h2 className="text-lg font-semibold" style={{ color: theme.colors.primary }}>
+            {isActive ? 'Pending Deliveries' : `Pending Deliveries (${usedSlots})`}
+          </h2>
         </div>
         <div className="p-6">
           {pendingOrders.length > 0 ? (
